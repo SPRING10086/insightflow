@@ -16,9 +16,10 @@
 
 ### P1 严重级修复
 
-- **P1-3 别名误判**
+- **P1-3 别名误判 / 率字段**
   - `毛利率 / 利润率 / 占比 / 平均 / 非销售额` 等不可相加表头不再映射到 revenue/profit 并参与 SUM。
-  - 回归测试：`test_rate_and_negative_headers_are_not_summed_as_amount_metrics`。
+  - 率类字段使用 `AVG` 聚合；KPI、分时、分维度、日环比均按均值，占比/帕累托在率作为主指标时禁用。
+  - 回归测试：`test_rate_and_negative_headers_are_not_summed_as_amount_metrics`、`test_rate_metric_uses_average_and_skips_share`。
 
 - **P1-4 日月歧义**
   - `03/04/2026` 这类日/月都 ≤12 的值默认按“月/日/年”解析（2026-03-04），显式 `15/04` 或 `04/15` 仍可判定。

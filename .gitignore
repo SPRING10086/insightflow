@@ -19,6 +19,7 @@ state/*
 *.lock
 *.tmp
 tests/insightflow-test-*/
+tests/insightflow-e2e-*/
 my_data/
 .edge-profile/
 
