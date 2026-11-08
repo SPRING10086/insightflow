@@ -1,0 +1,105 @@
+{
+  "target_date": "2026-11-07",
+  "baseline_date": "2026-11-06",
+  "source_dir": "<ROOT>\\examples\\raw",
+  "files_scanned": 7,
+  "files_read": 5,
+  "tables": [
+    {
+      "file": "legacy_gbk.csv",
+      "sheet": "CSV",
+      "rows": 28,
+      "target_rows": 14,
+      "baseline_rows": 14,
+      "date_column": "订单日期",
+      "fields": 13,
+      "issues": []
+    },
+    {
+      "file": "messy_headers.csv",
+      "sheet": "CSV",
+      "rows": 20,
+      "target_rows": 10,
+      "baseline_rows": 10,
+      "date_column": "订单日期",
+      "fields": 9,
+      "issues": []
+    },
+    {
+      "file": "no_date.csv",
+      "sheet": "CSV",
+      "rows": 2,
+      "target_rows": 0,
+      "baseline_rows": 0,
+      "date_column": "—",
+      "fields": 3,
+      "issues": [
+        "未识别到日期字段，无法按目标日期筛选。",
+        "未找到可解析的日期列，无法筛选目标日期。"
+      ]
+    },
+    {
+      "file": "sales_detail.xlsx",
+      "sheet": "说明",
+      "rows": 1,
+      "target_rows": 0,
+      "baseline_rows": 0,
+      "date_column": "目标日期",
+      "fields": 1,
+      "issues": [
+        "字段「日期」仅 0% 的值可解析为日期，已保留为候选。",
+        "未识别到数值指标，报告将退化为记录频次与数据质量分析。",
+        "未识别到可分组维度，结构分析将不可用。",
+        "1 行的日期无法解析，已跳过。"
+      ]
+    },
+    {
+      "file": "sales_detail.xlsx",
+      "sheet": "销售明细",
+      "rows": 321,
+      "target_rows": 65,
+      "baseline_rows": 64,
+      "date_column": "订单日期",
+      "fields": 13,
+      "issues": []
+    },
+    {
+      "file": "sales_detail.xlsx",
+      "sheet": "口径说明",
+      "rows": 2,
+      "target_rows": 0,
+      "baseline_rows": 0,
+      "date_column": "—",
+      "fields": 2,
+      "issues": [
+        "字段「销售额」仅 0% 的值可解析为数值。",
+        "字段「销售额」仅 0% 的值可解析为数值。",
+        "未识别到日期字段，无法按目标日期筛选。",
+        "未识别到可分组维度，结构分析将不可用。",
+        "未找到可解析的日期列，无法筛选目标日期。"
+      ]
+    },
+    {
+      "file": "store_orders.csv",
+      "sheet": "CSV",
+      "rows": 24,
+      "target_rows": 12,
+      "baseline_rows": 12,
+      "date_column": "订单日期",
+      "fields": 13,
+      "issues": []
+    }
+  ],
+  "file_errors": [
+    {
+      "file": "broken.xlsx",
+      "status": "error",
+      "error": "无法打开工作簿（可能损坏、加密或格式不匹配）: File is not a zip file"
+    },
+    {
+      "file": "empty.csv",
+      "status": "error",
+      "error": "文件大小为 0 字节。"
+    }
+  ]
+}

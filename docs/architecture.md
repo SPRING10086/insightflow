@@ -66,6 +66,7 @@ sequenceDiagram
 | `analysis.py` | KPI、聚合、Pareto、分布、相关性、洞察、图表数据 | HTML 渲染 |
 | `report.py` | 模板、图表配置、HTML 转义、离线资源内联 | 文件读取 |
 | `pipeline.py` | 编排、锁、幂等、产物、日志、异常边界 | 具体算法 |
+| `services.py` | 只读预览：扫描 + 读取 + 目标/基准日命中，供 CLI 与 GUI 共用 | 写报告、加锁、幂等索引 |
 | `scheduler.py` | Windows Task XML / schtasks / daemon / 补跑 | 分析逻辑 |
 | `logging_setup.py` | 轮转文本日志 + JSONL + 最近一次记录 | 业务状态 |
 | `gui/` | 桌面操作端：主窗口与四分区、后台线程与消息队列、锁定环境自检 | 任何业务计算（一律调用 `pipeline.execute()`） |

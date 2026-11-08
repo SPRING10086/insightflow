@@ -106,6 +106,7 @@ insightflow/
 │  └─ config.example.json         # 可提交的配置模板
 ├─ src/insightflow/
 │  ├─ cli.py                      # run / scan / demo / logs / schedule / init
+│  ├─ services.py                 # 只读预览（scan 与操作端共用，不写任何产物）
 │  ├─ pipeline.py                 # 编排、锁、幂等、日志、产物
 │  ├─ discovery.py                # 数据源扫描
 │  ├─ readers.py                  # CSV/Excel 读取、编码、分隔符、表头

@@ -11,13 +11,12 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from . import __app_name__, __version__
+from . import __app_name__, __version__, services
 from .config import ConfigError, Settings, load_settings
-from .discovery import SourceNotFoundError, discover_files
+from .discovery import SourceNotFoundError
 from .logging_setup import read_run_history
 from .models import RunRecord, STATUS_FAILED, STATUS_NO_DATA, STATUS_SKIPPED, STATUS_SUCCESS
 from .pipeline import execute
-from .readers import read_sources
 from .scheduler import (
     daemon_status,
     install_windows_task,
@@ -25,8 +24,6 @@ from .scheduler import (
     remove_windows_task,
     run_daemon,
 )
-from .schema import detect_schema
-from .normalize import extract_periods
 from .utils import jsonable
 
 
@@ -138,71 +135,45 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
 
 
 def _cmd_scan(settings: Settings, args: argparse.Namespace) -> int:
-    source_root = Path(args.source).expanduser().resolve() if args.source else settings.source_dir
+    """Print a preview produced by :func:`insightflow.services.preview`."""
     target = _target(settings, args.date)
-    baseline = settings.baseline_date(target)
+    source = Path(args.source).expanduser().resolve() if args.source else None
     try:
-        files = discover_files(settings, source_root)
+        payload = services.preview(settings, target, source)
     except SourceNotFoundError as exc:
         _error(str(exc))
         return 1
-    if not files:
-        _error(f"数据源目录没有 Excel/CSV 文件: {source_root}")
+    if payload.empty_source:
+        _error(f"数据源目录没有 Excel/CSV 文件: {payload['source_dir']}")
         return 2
-    read_result = read_sources(files, settings, source_root)
-    rows: list[dict[str, Any]] = []
-    for table in read_result.tables:
-        schema = detect_schema(table.frame, date_order=settings.date_order)
-        extraction = extract_periods(table, schema, target, baseline, date_order=settings.date_order)
-        rows.append(
-            {
-                "file": table.source.relative_path,
-                "sheet": table.sheet_label,
-                "rows": len(table.frame),
-                "target_rows": len(extraction.target),
-                "baseline_rows": len(extraction.baseline),
-                "date_column": extraction.selected_column or "—",
-                "fields": len(schema.fields),
-                "issues": [issue.message for issue in [*schema.issues, *extraction.issues] if issue.severity in {"warning", "error"}],
-            }
-        )
-    payload = {
-        "target_date": target.isoformat(),
-        "baseline_date": baseline.isoformat() if baseline else None,
-        "source_dir": str(source_root),
-        "files_scanned": read_result.files_scanned,
-        "files_read": read_result.files_read,
-        "tables": rows,
-        "file_errors": [
-            {"file": report.relative_path, "status": report.status, "error": report.error}
-            for report in read_result.file_reports
-            if report.error
-        ],
-    }
     if args.json:
         print(json.dumps(jsonable(payload), ensure_ascii=False, indent=2))
     else:
-        print(f"InsightFlow 扫描预览 · 目标 {target.isoformat()}")
-        print(f"数据源: {source_root}")
-        print(f"文件: {read_result.files_scanned} 扫描 / {read_result.files_read} 成功读取\n")
-        print(f"{'文件':<34} {'表':<14} {'行':>5} {'目标':>5} {'基准':>5} {'日期列':<16} {'字段':>4}")
-        print("-" * 105)
-        for row in rows:
-            print(
-                f"{_clip(row['file'], 33):<34} {_clip(row['sheet'], 13):<14} "
-                f"{row['rows']:>5} {row['target_rows']:>5} {row['baseline_rows']:>5} "
-                f"{_clip(row['date_column'], 15):<16} {row['fields']:>4}"
-            )
-        if payload["file_errors"]:
-            print("\n读取失败:")
-            for item in payload["file_errors"]:
-                print(f"  - {item['file']}: {_clip(item['error'], 120)}")
-        warnings = [issue for issue in read_result.warnings if issue.severity in {"warning", "error"}]
-        if warnings:
-            print(f"\n兼容性提示（{len(warnings)} 条）:")
-            for issue in warnings[:8]:
-                print(f"  - [{issue.code}] {issue.message}")
-    return 0 if any(row["target_rows"] for row in rows) else 2
+        _print_preview(payload)
+    return 0 if payload.has_target_rows else 2
+
+
+def _print_preview(payload: services.PreviewPayload) -> None:
+    """Render a preview payload; formatting only, no reading or computing."""
+    print(f"InsightFlow 扫描预览 · 目标 {payload['target_date']}")
+    print(f"数据源: {payload['source_dir']}")
+    print(f"文件: {payload['files_scanned']} 扫描 / {payload['files_read']} 成功读取\n")
+    print(f"{'文件':<34} {'表':<14} {'行':>5} {'目标':>5} {'基准':>5} {'日期列':<16} {'字段':>4}")
+    print("-" * 105)
+    for row in payload["tables"]:
+        print(
+            f"{_clip(row['file'], 33):<34} {_clip(row['sheet'], 13):<14} "
+            f"{row['rows']:>5} {row['target_rows']:>5} {row['baseline_rows']:>5} "
+            f"{_clip(row['date_column'], 15):<16} {row['fields']:>4}"
+        )
+    if payload["file_errors"]:
+        print("\n读取失败:")
+        for item in payload["file_errors"]:
+            print(f"  - {item['file']}: {_clip(item['error'], 120)}")
+    if payload.warnings:
+        print(f"\n兼容性提示（{len(payload.warnings)} 条）:")
+        for warning in payload.warnings[:8]:
+            print(f"  - [{warning['code']}] {warning['message']}")
 
 
 def _cmd_demo(settings: Settings, args: argparse.Namespace) -> int:

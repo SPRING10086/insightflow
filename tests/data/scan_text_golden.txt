@@ -1,0 +1,22 @@
+InsightFlow 扫描预览 · 目标 2026-11-07
+数据源: <ROOT>\examples\raw
+文件: 7 扫描 / 5 成功读取
+
+文件                                 表                  行    目标    基准 日期列                字段
+---------------------------------------------------------------------------------------------------------
+legacy_gbk.csv                     CSV               28    14    14 订单日期               13
+messy_headers.csv                  CSV               20    10    10 订单日期                9
+no_date.csv                        CSV                2     0     0 —                   3
+sales_detail.xlsx                  说明                 1     0     0 目标日期                1
+sales_detail.xlsx                  销售明细             321    65    64 订单日期               13
+sales_detail.xlsx                  口径说明               2     0     0 —                   2
+store_orders.csv                   CSV               24    12    12 订单日期               13
+
+读取失败:
+  - broken.xlsx: 无法打开工作簿（可能损坏、加密或格式不匹配）: File is not a zip file
+  - empty.csv: 文件大小为 0 字节。
+
+兼容性提示（3 条）:
+  - [excel_open_error] 无法打开工作簿（可能损坏、加密或格式不匹配）: File is not a zip file
+  - [empty_file] 文件大小为 0 字节。
+  - [header_repaired] 已自动修复 9 个疑似乱码表头。
