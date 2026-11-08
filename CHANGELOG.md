@@ -24,8 +24,9 @@
 - **P1-4 日月歧义**
   - `03/04/2026` 这类日/月都 ≤12 的值默认按“月/日/年”解析（2026-03-04），显式 `15/04` 或 `04/15` 仍可判定。
   - 新增 `date_order` 配置（`month_first` / `day_first` / `error`），检测到歧义值会在数据质量区写 warning。
+  - 即使错误假设导致目标日命中 0 行，`date_order_ambiguous` 也保留在运行日志/质量提示中。
   - 文档建议跨区域数据使用 `YYYY-MM-DD`；欧式日/月数据设置 `day_first`。
-  - 回归测试：`test_ambiguous_dates_default_to_month_first`、`test_ambiguous_dates_emit_warning`。
+  - 回归测试：`test_ambiguous_dates_default_to_month_first`、`test_ambiguous_dates_emit_warning`、`test_date_order_warning_survives_no_target_rows`。
 
 - **P1-5 `sheets_skipped`**
   - 读取函数返回工作簿 `total_sheets`，`FileReport.sheets_skipped = total - read`，替换原来的 `len(x)-len(x)` 死代码；全部 Sheet 失败时仍能正确统计。
