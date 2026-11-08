@@ -21,13 +21,14 @@
   - 回归测试：`test_rate_and_negative_headers_are_not_summed_as_amount_metrics`。
 
 - **P1-4 日月歧义**
-  - `03/04/2026` 这类日/月都 ≤12 的值默认按“日/月/年”解析，显式 `15/04` 或 `04/15` 仍可判定。
-  - 文档建议跨区域数据使用 `YYYY-MM-DD`。
-  - 回归测试：`test_ambiguous_dates_default_to_day_first`。
+  - `03/04/2026` 这类日/月都 ≤12 的值默认按“月/日/年”解析（2026-03-04），显式 `15/04` 或 `04/15` 仍可判定。
+  - 新增 `date_order` 配置（`month_first` / `day_first` / `error`），检测到歧义值会在数据质量区写 warning。
+  - 文档建议跨区域数据使用 `YYYY-MM-DD`；欧式日/月数据设置 `day_first`。
+  - 回归测试：`test_ambiguous_dates_default_to_month_first`、`test_ambiguous_dates_emit_warning`。
 
 - **P1-5 `sheets_skipped`**
-  - `TableData.sheet_total` 记录工作簿 Sheet 总数，`FileReport.sheets_skipped = total - read`，替换原来的 `len(x)-len(x)` 死代码。
-  - 回归测试：`test_sheets_skipped_counts_empty_sheets`。
+  - 读取函数返回工作簿 `total_sheets`，`FileReport.sheets_skipped = total - read`，替换原来的 `len(x)-len(x)` 死代码；全部 Sheet 失败时仍能正确统计。
+  - 回归测试：`test_sheets_skipped_counts_empty_sheets`、`test_all_sheets_empty_still_reports_two_skipped`。
 
 - **P1-6 daemon 补跑 / 失败重试**
   - 触发窗口从 35 秒改为配置的 `grace_minutes`（默认 180 分钟），休眠恢复后可补跑。
@@ -40,7 +41,7 @@
 - 新增 `requirements.lock.txt`，固定验证过的依赖版本。
 - `run_scheduled.ps1` 不再用 `*> $null` 吞掉排障输出；完整 UTF-8 输出写入 `logs/scheduler_console.log`。
 - 锁过期时间从 4 小时调整为 150 分钟，与 Windows 任务 2 小时超时对齐。
-- 新增 GitHub Actions `tests.yml`，在 Windows + Python 3.10 上跑 37 个测试。
+- 新增 GitHub Actions `tests.yml`，在 Windows + Python 3.10 上跑 40 个测试。
 
 ### P2 仍待处理
 
@@ -50,5 +51,5 @@
 
 ### 验证
 
-- `python -m unittest discover -s tests`：**37 tests OK**。
+- `python -m unittest discover -s tests`：**40 tests OK**。
 - 新增 `tests/test_defects.py`，每个缺陷先有失败测试再修复。

@@ -77,8 +77,8 @@ sequenceDiagram
 
 `SourceFile` → `TableData[]` → `FileReport[]`：
 
-- `TableData` 保留原始表头、表头行号、编码、分隔符、行数、截断标记、修复表头计数、`sheet_total`；
-- `FileReport` 是面向日志/血缘的摘要，记录 `read / no_target / skipped / error`，并给出 `sheets_read / sheets_skipped`；
+- `TableData` 保留原始表头、表头行号、编码、分隔符、行数、截断标记、修复表头计数；
+- 读取函数同时返回工作簿的 `total_sheets`；`FileReport` 记录 `read / no_target / skipped / error`，并给出 `sheets_read / sheets_skipped`（全 Sheet 失败也会保留正确跳过数）；
 - 所有异常都转换为 `FileIssue(code, message, severity, file, sheet)`，而不是向上抛。
 
 ### 4.2 规范字段
@@ -112,7 +112,7 @@ customer_id, order_id, ...
 4. 以 `命中数 → 基准命中 → 解析率 → 表头优先级` 投票；
 5. 选中的列写入运行元数据 `date_columns`。
 
-这能处理“日期列很多，但只有一列真正对应本期”的常见导出。`03/04/2026` 这类日/月都 ≤12 的歧义值默认按 **日/月/年** 解析；跨区域数据建议使用 `YYYY-MM-DD`。
+这能处理“日期列很多，但只有一列真正对应本期”的常见导出。`03/04/2026` 这类日/月都 ≤12 的歧义值默认按 **月/日/年** 解析（2026-03-04）；可通过 `date_order: month_first / day_first / error` 切换，检测到歧义值会写 warning。跨区域数据建议使用 `YYYY-MM-DD`。
 
 字段推断对 `毛利率 / 利润率 / 占比 / 平均 / 非销售额` 等**不可相加**表头做了防护：它们不会映射到 revenue/profit 等金额指标后被 SUM，而是降级为未知指标，避免“数字悄悄错掉”。
 

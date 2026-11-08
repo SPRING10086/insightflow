@@ -40,17 +40,17 @@ class PeriodExtraction:
     issues: list[FileIssue] = field(default_factory=list)
 
 
-def date_series(series: pd.Series, kind: str) -> pd.Series:
+def date_series(series: pd.Series, kind: str, date_order: str = "month_first") -> pd.Series:
     """Parse a date/timestamp column into a pandas ``date`` series."""
     if pd.api.types.is_datetime64_any_dtype(series):
         return series.dt.date
     if kind == "timestamp":
-        return series.map(lambda value: _timestamp_date(value))
-    return series.map(lambda value: parse_date_value(value))
+        return series.map(lambda value: _timestamp_date(value, date_order))
+    return series.map(lambda value: parse_date_value(value, date_order=date_order))
 
 
-def _timestamp_date(value: Any) -> date | None:
-    parsed = parse_timestamp_value(value)
+def _timestamp_date(value: Any, date_order: str = "month_first") -> date | None:
+    parsed = parse_timestamp_value(value, date_order=date_order)
     return parsed.date() if parsed else None
 
 
@@ -59,6 +59,7 @@ def pick_date_candidate(
     schema: TableSchema,
     target_date: date,
     baseline_date: date | None,
+    date_order: str = "month_first",
 ) -> tuple[DateCandidate | None, pd.Series | None, dict[str, int]]:
     """Choose the date column that actually contains the target period.
 
@@ -71,7 +72,7 @@ def pick_date_candidate(
     for candidate in schema.date_candidates:
         if candidate.column not in table.frame.columns:
             continue
-        parsed = date_series(table.frame[candidate.column], candidate.kind)
+        parsed = date_series(table.frame[candidate.column], candidate.kind, date_order=date_order)
         target_count = int((parsed == target_date).sum())
         baseline_count = int((parsed == baseline_date).sum()) if baseline_date else 0
         parse_rate = float(parsed.notna().mean()) if len(parsed) else 0.0
@@ -89,9 +90,12 @@ def extract_periods(
     schema: TableSchema,
     target_date: date,
     baseline_date: date | None,
+    date_order: str = "month_first",
 ) -> PeriodExtraction:
     issues: list[FileIssue] = []
-    candidate, parsed, counts = pick_date_candidate(table, schema, target_date, baseline_date)
+    candidate, parsed, counts = pick_date_candidate(
+        table, schema, target_date, baseline_date, date_order=date_order
+    )
     if candidate is None or parsed is None:
         issues.append(
             FileIssue(
@@ -153,8 +157,12 @@ def extract_periods(
             )
         )
 
-    target = normalize_rows(target_raw, schema, table, "target", candidate)
-    baseline = normalize_rows(baseline_raw, schema, table, "baseline", candidate) if baseline_date else pd.DataFrame()
+    target = normalize_rows(target_raw, schema, table, "target", candidate, date_order=date_order)
+    baseline = (
+        normalize_rows(baseline_raw, schema, table, "baseline", candidate, date_order=date_order)
+        if baseline_date
+        else pd.DataFrame()
+    )
 
     return PeriodExtraction(
         target=target,
@@ -175,14 +183,17 @@ def normalize_rows(
     table: TableData,
     period: str,
     date_candidate: DateCandidate,
+    date_order: str = "month_first",
 ) -> pd.DataFrame:
     if raw.empty:
         return pd.DataFrame()
     records: list[dict[str, Any]] = []
-    date_values = date_series(raw[date_candidate.column], date_candidate.kind)
+    date_values = date_series(raw[date_candidate.column], date_candidate.kind, date_order=date_order)
     timestamp_available = "timestamp" in schema.fields and schema.fields["timestamp"].original in raw.columns
     timestamp_series = (
-        raw[schema.fields["timestamp"].original].map(parse_timestamp_value)
+        raw[schema.fields["timestamp"].original].map(
+            lambda value: parse_timestamp_value(value, date_order=date_order)
+        )
         if timestamp_available
         else None
     )
@@ -212,7 +223,7 @@ def normalize_rows(
         if timestamp_series is not None:
             timestamp = timestamp_series.iloc[position]
         if timestamp is None and date_candidate.kind == "timestamp":
-            timestamp = parse_timestamp_value(row.get(date_candidate.column))
+            timestamp = parse_timestamp_value(row.get(date_candidate.column), date_order=date_order)
         if timestamp is None:
             timestamp = None
         hour = timestamp.hour if timestamp is not None else None

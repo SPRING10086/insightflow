@@ -63,7 +63,6 @@ class TableData:
     issues: list[FileIssue] = field(default_factory=list)
     truncated: bool = False
     header_repairs: int = 0
-    sheet_total: int = 0
 
     @property
     def sheet_label(self) -> str:
@@ -94,6 +93,7 @@ class FieldSpec:
     unique_count: int = 0
     multiplier: float = 1.0
     value_format: str = "number"
+    aggregation: str = "SUM"  # SUM | AVG | COUNT
 
 
 @dataclass

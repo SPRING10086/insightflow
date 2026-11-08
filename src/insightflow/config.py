@@ -29,6 +29,7 @@ _DEFAULTS: dict[str, Any] = {
     "state_dir": "state",
     "schedule_time": "09:30",
     "target_date_mode": "previous_day",
+    "date_order": "month_first",
     "recursive_scan": True,
     "include_extensions": [".xlsx", ".xls", ".csv"],
     "max_file_mb": 50,
@@ -85,6 +86,7 @@ class Settings:
     timezone: str = "Asia/Shanghai"
     schedule_time: str = "09:30"
     target_date_mode: str = "previous_day"
+    date_order: str = "month_first"
     recursive_scan: bool = True
     include_extensions: tuple[str, ...] = (".xlsx", ".xls", ".csv")
     max_file_mb: float = 50
@@ -130,6 +132,7 @@ class Settings:
             "state_dir": self.state_dir.as_posix(),
             "schedule_time": self.schedule_time,
             "target_date_mode": self.target_date_mode,
+            "date_order": self.date_order,
             "recursive_scan": self.recursive_scan,
             "include_extensions": list(self.include_extensions),
             "max_file_mb": self.max_file_mb,
@@ -207,6 +210,9 @@ def load_settings(
 
     schedule_time = str(merged.get("schedule_time", "09:30"))
     _validate_schedule_time(schedule_time)
+    date_order = str(merged.get("date_order", "month_first")).lower()
+    if date_order not in {"month_first", "day_first", "error"}:
+        raise ConfigError("date_order 必须是 month_first / day_first / error")
 
     settings = Settings(
         project_root=root,
@@ -220,6 +226,7 @@ def load_settings(
         timezone=str(merged.get("timezone", "Asia/Shanghai")),
         schedule_time=schedule_time,
         target_date_mode=str(merged.get("target_date_mode", "previous_day")),
+        date_order=date_order,
         recursive_scan=bool(merged.get("recursive_scan", True)),
         include_extensions=include_extensions,
         max_file_mb=float(merged.get("max_file_mb", 50)),

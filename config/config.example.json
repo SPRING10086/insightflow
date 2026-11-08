@@ -8,6 +8,7 @@
   "state_dir": "state",
   "schedule_time": "09:30",
   "target_date_mode": "previous_day",
+  "date_order": "month_first",
   "recursive_scan": true,
   "include_extensions": [".xlsx", ".xls", ".csv"],
   "max_file_mb": 50,

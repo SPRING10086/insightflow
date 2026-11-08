@@ -248,23 +248,24 @@ def build_frame(
 # ---------------------------------------------------------------------------
 
 
-def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableData], list[FileIssue]]:
+def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableData], list[FileIssue], int]:
+    """Read one CSV; return tables, issues and the 0/1 sheet count."""
     issues: list[FileIssue] = []
     if source.size_bytes == 0:
-        return [], [_issue("empty_file", "文件大小为 0 字节。", "error", source.relative_path)]
+        return [], [_issue("empty_file", "文件大小为 0 字节。", "error", source.relative_path)], 0
 
     try:
         data = source.path.read_bytes()
     except OSError as exc:
-        return [], [_issue("file_read_error", f"无法读取文件: {exc}", "error", source.relative_path)]
+        return [], [_issue("file_read_error", f"无法读取文件: {exc}", "error", source.relative_path)], 0
 
     if b"\x00" in data[:4096] and not (data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff")):
-        return [], [_issue("binary_file", "文件包含 NUL 字节，疑似二进制文件而非 CSV。", "error", source.relative_path)]
+        return [], [_issue("binary_file", "文件包含 NUL 字节，疑似二进制文件而非 CSV。", "error", source.relative_path)], 0
 
     text, encoding, decode_warnings = decode_bytes(data)
     issues.extend(_issue("encoding_fallback", message, "warning", source.relative_path) for message in decode_warnings)
     if not text.strip():
-        return [], [_issue("empty_file", "CSV 解码后没有可读内容。", "error", source.relative_path)]
+        return [], [_issue("empty_file", "CSV 解码后没有可读内容。", "error", source.relative_path)], 0
     if "\ufffd" in text:
         issues.append(_issue("garbled_text", "文件中存在无法解码的字符，已按替换字符保留。", "warning", source.relative_path))
 
@@ -299,7 +300,7 @@ def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableDat
         issues.append(_issue("csv_parse_error", f"CSV 解析异常: {exc}", "warning", source.relative_path))
 
     if not rows:
-        return [], issues + [_issue("empty_table", "CSV 没有数据行。", "error", source.relative_path)]
+        return [], issues + [_issue("empty_table", "CSV 没有数据行。", "error", source.relative_path)], 1
     header_index = detect_header_row(rows, settings.header_scan_rows)
     header, header_repairs = _repair_header_row(rows[header_index])
     if header_repairs:
@@ -328,7 +329,7 @@ def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableDat
         )
     frame = build_frame(header, data_rows, data_row_numbers)
     if frame.empty:
-        return [], issues + [_issue("empty_table", "CSV 只有表头，没有有效数据行。", "warning", source.relative_path)]
+        return [], issues + [_issue("empty_table", "CSV 只有表头，没有有效数据行。", "warning", source.relative_path)], 1
 
     ragged = sum(1 for row in data_rows if len(row) != len(header))
     if ragged:
@@ -352,9 +353,8 @@ def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableDat
         issues=issues,
         truncated=truncated,
         header_repairs=header_repairs,
-        sheet_total=1,
     )
-    return [table], issues
+    return [table], issues, 1
 
 
 # ---------------------------------------------------------------------------
@@ -362,10 +362,15 @@ def read_csv_file(source: SourceFile, settings: Settings) -> tuple[list[TableDat
 # ---------------------------------------------------------------------------
 
 
-def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableData], list[FileIssue]]:
+def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableData], list[FileIssue], int]:
+    """Read one workbook; the third value is the total sheet count.
+
+    It is returned even when every sheet is empty/unusable so the run log can
+    honestly report ``sheets_skipped``.
+    """
     issues: list[FileIssue] = []
     if source.size_bytes == 0:
-        return [], [_issue("empty_file", "文件大小为 0 字节。", "error", source.relative_path)]
+        return [], [_issue("empty_file", "文件大小为 0 字节。", "error", source.relative_path)], 0
 
     engine = "xlrd" if source.suffix.lower() == ".xls" else "openpyxl"
     if engine == "xlrd":
@@ -379,7 +384,7 @@ def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableD
                     "error",
                     source.relative_path,
                 )
-            ]
+            ], 0
 
     tables: list[TableData] = []
     try:
@@ -392,7 +397,7 @@ def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableD
                 "error",
                 source.relative_path,
             )
-        ]
+        ], 0
 
     sheet_total = len(workbook.sheet_names)
     try:
@@ -467,7 +472,6 @@ def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableD
                 issues=[],
                 truncated=truncated,
                 header_repairs=header_repairs,
-                sheet_total=sheet_total,
             )
             tables.append(table)
     finally:
@@ -482,7 +486,7 @@ def read_excel_file(source: SourceFile, settings: Settings) -> tuple[list[TableD
                 source.relative_path,
             )
         )
-    return tables, issues
+    return tables, issues, sheet_total
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +505,7 @@ def read_sources(files: list[SourceFile], settings: Settings, root: Path) -> Rea
     for source in files:
         issues: list[FileIssue] = []
         file_tables: list[TableData] = []
+        total_sheets = 0
         error_message = ""
         status = "no_target"
 
@@ -517,9 +522,9 @@ def read_sources(files: list[SourceFile], settings: Settings, root: Path) -> Rea
         else:
             try:
                 if source.suffix.lower() == ".csv":
-                    file_tables, issues = read_csv_file(source, settings)
+                    file_tables, issues, total_sheets = read_csv_file(source, settings)
                 elif source.suffix.lower() in {".xlsx", ".xls"}:
-                    file_tables, issues = read_excel_file(source, settings)
+                    file_tables, issues, total_sheets = read_excel_file(source, settings)
                 else:
                     issues = [_issue("unsupported_type", "不支持的文件类型。", "error", source.relative_path)]
                     status = "skipped"
@@ -540,7 +545,6 @@ def read_sources(files: list[SourceFile], settings: Settings, root: Path) -> Rea
         if not error_message:
             error_message = next((issue.message for issue in issues if issue.severity == "error"), "")
         all_warnings.extend(issues)
-        total_sheets = max((table.sheet_total for table in file_tables), default=0)
         file_reports.append(
             FileReport(
                 relative_path=source.relative_path,

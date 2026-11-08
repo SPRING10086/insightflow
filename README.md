@@ -70,7 +70,7 @@ start output\latest.html
 - **可重复**：不使用随机分析逻辑；同一输入得到同一指标和结论。合成演示数据也固定随机种子。
 - **可调度**：文件锁防止定时任务与手动任务并发写坏报告；数据指纹避免重复生成。
 - **可交付**：报告是单文件，不需要 Python、数据库、Web 服务或网络；打印 / 导出 PDF、单图 PNG 都可用。
-- **工程化**：`src/` 包结构、dataclass 数据契约、类型注解、中文注释、37 个单元/集成测试；P0/P1 回归测试见 `tests/test_defects.py`。
+- **工程化**：`src/` 包结构、dataclass 数据契约、类型注解、中文注释、40 个单元/集成测试；P0/P1 回归测试见 `tests/test_defects.py`。
 
 ---
 
@@ -144,6 +144,7 @@ insightflow/
   "log_dir": "logs",
   "state_dir": "state",
   "schedule_time": "09:30",
+  "date_order": "month_first",
   "recursive_scan": true,
   "include_extensions": [".xlsx", ".xls", ".csv"],
   "max_file_mb": 50,
@@ -165,7 +166,7 @@ insightflow/
 关键口径：
 
 - **目标日期**：`previous_day` = 配置时区的前一自然日。定时器 09:30 触发时，默认分析昨天。
-- **日期歧义**：`03/04/2026` 这类无法区分日/月的值默认按 **日/月/年** 解析为 2026-03-04；跨区域数据建议直接使用 `YYYY-MM-DD`。
+- **日期歧义**：`03/04/2026` 这类无法区分日/月的值默认按 **月/日/年** 解析为 2026-03-04；欧式日/月数据请把 `date_order` 设为 `day_first`，或直接使用 `YYYY-MM-DD`。检测到歧义值会写 warning。
 - **对比基准**：默认取目标日前 1 天；基准不存在时报告明确显示“无基准”，不编造环比。
 - **图表预算**：`max_charts` 限制报告长度；被预算挤掉的分析项会记录跳过原因。
 - **字段单位**：支持 `销售额(万元)` 等表头单位换算；单元格自带 `1.2万` 时不会重复乘。
@@ -331,7 +332,7 @@ daemon 会计算下一次 09:30，按 30 秒轮询；在 `grace_minutes` 内补�
 - **幂等**：源文件路径/大小/mtime 指纹；同指纹复用报告，`--force` 可强制重算。
 - **结构化错误**：每个兼容性问题有 `code / message / severity / file / sheet`。
 - **数据契约**：`models.py` 中 dataclass 定义读取、清洗、计划、图表、运行记录。
-- **测试**：37 个 unittest，覆盖日期/数字/乱码、表头/分隔符/编码、字段识别、清洗、端到端报告、幂等、锁、HTML 转义、调度 XML；其中 `tests/test_defects.py` 专门覆盖 P0/P1 静默错误。
+- **测试**：40 个 unittest，覆盖日期/数字/乱码、表头/分隔符/编码、字段识别、清洗、端到端报告、幂等、锁、HTML 转义、调度 XML；其中 `tests/test_defects.py` 专门覆盖 P0/P1 静默错误。
 - **CI**：`.github/workflows/tests.yml` 在 Windows + Python 3.10 上安装锁定依赖并跑全量测试。
 
 ```powershell

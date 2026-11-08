@@ -259,6 +259,7 @@ start output\latest.html</code></pre>
   "source_dir": "D:/每日数据/销售导出",
   "output_dir": "output",
   "schedule_time": "09:30",
+  "date_order": "month_first",
   "recursive_scan": true
 }</code></pre>
       <div class="warn"><b>Windows 路径写法：</b>推荐用正斜杠 <code class="inline">D:/每日数据/销售导出</code>；如果用反斜杠，JSON 里要写成双反斜杠 <code class="inline">D:\\每日数据\\销售导出</code>。路径有空格也可以，但要用引号包住。</div>
@@ -306,7 +307,7 @@ start output\latest.html</code></pre>
         <div class="card"><b>不要用</b><p><code class="inline">2026-11</code>（只有月份）、<code class="inline">11/7</code>（缺年份）、<code class="inline">上周</code>、<code class="inline">昨天</code>。日粒度分析必须有完整日期。</p></div>
       </div>
       <p>列名建议使用：<code class="inline">日期</code>、<code class="inline">订单日期</code>、<code class="inline">业务日期</code>、<code class="inline">交易日期</code>、<code class="inline">统计日期</code>、<code class="inline">date</code>、<code class="inline">order_date</code>。其他名字也可能被识别，但用这些最稳。</p>
-      <div class="warn"><b>日月歧义：</b><code class="inline">03/04/2026</code> 默认按“日/月/年”解析为 <b>2026-03-04</b>。如果源系统是美式“月/日/年”，请先转成 <code class="inline">YYYY-MM-DD</code>，避免数据归错期。</div>
+      <div class="warn"><b>日月歧义：</b><code class="inline">03/04/2026</code> 默认按“月/日/年”解析为 <b>2026-03-04</b>。如果源系统是欧式“日/月/年”，请把配置里的 <code class="inline">date_order</code> 改成 <code class="inline">day_first</code>，或先转成 <code class="inline">YYYY-MM-DD</code>。检测到歧义值时报告会给出 warning。</div>
 
       <h3>4.3 指标怎么写</h3>
       <ul>

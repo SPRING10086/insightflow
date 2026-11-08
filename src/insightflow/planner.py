@@ -50,6 +50,8 @@ def build_plan(
     primary_metric = profile.primary_metric
     primary_dimension = profile.primary_dimension
     secondary_dimension = profile.secondary_dimension
+    primary_field = fields.get(primary_metric) if primary_metric else None
+    primary_is_additive = primary_field is None or primary_field.aggregation != "AVG"
     dimension_cardinalities = {
         key: int(target[key].astype(str).nunique()) for key in profile.dimensions if key in target.columns
     }
@@ -137,15 +139,26 @@ def build_plan(
         )
 
     if primary_dimension and dimension_cardinalities.get(primary_dimension, 0) <= 12:
-        steps.append(
-            AnalysisStep(
-                step_id="share",
-                title="构成占比",
-                rationale="主维度取值不超过 12 个，适合用环形图展示贡献结构。",
-                chart_type="donut",
-                priority=82,
+        if primary_is_additive:
+            steps.append(
+                AnalysisStep(
+                    step_id="share",
+                    title="构成占比",
+                    rationale="主维度取值不超过 12 个，适合用环形图展示贡献结构。",
+                    chart_type="donut",
+                    priority=82,
+                )
             )
-        )
+        else:
+            steps.append(
+                AnalysisStep(
+                    step_id="share",
+                    title="构成占比",
+                    rationale="主指标是率/均值，不能把各分组均值相加成占比。",
+                    enabled=False,
+                    skip_reason="主指标不可相加（AVG/率），占比与累计贡献不适用。",
+                )
+            )
     else:
         steps.append(
             AnalysisStep(
@@ -158,15 +171,26 @@ def build_plan(
         )
 
     if primary_dimension and dimension_cardinalities.get(primary_dimension, 0) >= 4:
-        steps.append(
-            AnalysisStep(
-                step_id="pareto",
-                title="集中度 / 帕累托",
-                rationale="维度至少有 4 个分组，可检验头部贡献是否接近 80/20。",
-                chart_type="pareto",
-                priority=78,
+        if primary_is_additive:
+            steps.append(
+                AnalysisStep(
+                    step_id="pareto",
+                    title="集中度 / 帕累托",
+                    rationale="维度至少有 4 个分组，可检验头部贡献是否接近 80/20。",
+                    chart_type="pareto",
+                    priority=78,
+                )
             )
-        )
+        else:
+            steps.append(
+                AnalysisStep(
+                    step_id="pareto",
+                    title="集中度 / 帕累托",
+                    rationale="主指标是率/均值，累计贡献无法相加。",
+                    enabled=False,
+                    skip_reason="主指标不可相加（AVG/率），帕累托不适用。",
+                )
+            )
     else:
         steps.append(
             AnalysisStep(
@@ -407,9 +431,9 @@ def _metric_definitions(fields: dict[str, FieldSpec], profile: DatasetProfile) -
             MetricDefinition(
                 key=key,
                 label=display_label(field),
-                formula=f"SUM({field.label})",
+                formula=f"{field.aggregation}({field.label})",
                 unit=field.unit,
-                aggregation="SUM",
+                aggregation=field.aggregation,
                 value_format=infer_value_format(field),
                 source_columns=[field.original],
             )

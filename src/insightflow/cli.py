@@ -152,8 +152,8 @@ def _cmd_scan(settings: Settings, args: argparse.Namespace) -> int:
     read_result = read_sources(files, settings, source_root)
     rows: list[dict[str, Any]] = []
     for table in read_result.tables:
-        schema = detect_schema(table.frame)
-        extraction = extract_periods(table, schema, target, baseline)
+        schema = detect_schema(table.frame, date_order=settings.date_order)
+        extraction = extract_periods(table, schema, target, baseline, date_order=settings.date_order)
         rows.append(
             {
                 "file": table.source.relative_path,

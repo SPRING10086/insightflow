@@ -150,7 +150,7 @@ def _totals(frame: pd.DataFrame, fields: dict[str, FieldSpec]) -> dict[str, Any]
             if field.kind != "metric" or key not in frame.columns:
                 continue
             series = pd.to_numeric(frame[key], errors="coerce")
-            if field.canonical in {"price", "discount"}:
+            if field.aggregation == "AVG":
                 value = series.mean()
             else:
                 value = series.sum()
@@ -323,8 +323,16 @@ def _dimension_table(
     working = frame.copy()
     working[dimension] = working[dimension].astype(str)
     grouped = working.groupby(dimension, dropna=False)
+    is_average = metric != "__record" and metric in fields and fields[metric].aggregation == "AVG"
     if metric == "__record":
         value = grouped.size().astype(float).rename("value")
+    elif is_average:
+        value = (
+            pd.to_numeric(working[metric], errors="coerce")
+            .groupby(working[dimension])
+            .mean()
+            .rename("value")
+        )
     else:
         value = (
             pd.to_numeric(working[metric], errors="coerce")
@@ -346,11 +354,15 @@ def _dimension_table(
         data = data.merge(cost.reset_index(), on=dimension, how="left")
     data["value"] = pd.to_numeric(data["value"], errors="coerce").fillna(0.0)
     data = data.sort_values(["value", dimension], ascending=[False, True]).reset_index(drop=True)
-    total = float(data["value"].sum())
-    data["share"] = data["value"].map(lambda value: value / total * 100 if total else 0.0)
-    data["cumulative_share"] = data["share"].cumsum()
+    if is_average:
+        data["share"] = None
+        data["cumulative_share"] = None
+    else:
+        total = float(data["value"].sum())
+        data["share"] = data["value"].map(lambda value: value / total * 100 if total else 0.0)
+        data["cumulative_share"] = data["share"].cumsum()
     data["rank"] = range(1, len(data) + 1)
-    if "orders" in data.columns:
+    if "orders" in data.columns and not is_average:
         data["aov"] = data.apply(
             lambda row: safe_divide(row["value"], row["orders"]) if pd.notna(row.get("orders")) else None,
             axis=1,
@@ -371,8 +383,8 @@ def _dimension_table(
             "rank": int(row["rank"]),
             "name": str(row[dimension]),
             "value": float(row["value"]),
-            "share": float(row["share"]),
-            "cumulative_share": float(row["cumulative_share"]),
+            "share": float(row["share"]) if pd.notna(row.get("share")) else None,
+            "cumulative_share": float(row["cumulative_share"]) if pd.notna(row.get("cumulative_share")) else None,
             "records": int(row["records"]),
             "orders": float(row["orders"]) if "orders" in data.columns and pd.notna(row.get("orders")) else None,
             "aov": float(row["aov"]) if "aov" in data.columns and pd.notna(row.get("aov")) else None,
@@ -449,6 +461,8 @@ def _hourly_rows(frame: pd.DataFrame, metric: str, fields: dict[str, FieldSpec])
     grouped = working.groupby("__hour")
     if metric == "__record":
         values = grouped.size().astype(float)
+    elif metric in fields and fields[metric].aggregation == "AVG":
+        values = pd.to_numeric(working[metric], errors="coerce").groupby(working["__hour"]).mean()
     else:
         values = pd.to_numeric(working[metric], errors="coerce").groupby(working["__hour"]).sum(min_count=1)
     orders = grouped["orders"].sum(min_count=1) if "orders" in working.columns and metric != "orders" else None
@@ -481,8 +495,8 @@ def _dod_data(
         return None
     if metric != "__record" and metric not in baseline.columns:
         return None
-    current_total = _metric_total(target, metric)
-    previous_total = _metric_total(baseline, metric)
+    current_total = _metric_total(target, metric, fields)
+    previous_total = _metric_total(baseline, metric, fields)
     result: dict[str, Any] = {
         "current_total": current_total,
         "previous_total": previous_total,
@@ -511,7 +525,7 @@ def _dod_data(
 
 
 def _share_data(dim_records: list[dict[str, Any]]) -> dict[str, Any]:
-    if not dim_records:
+    if not dim_records or any(row.get("share") is None for row in dim_records):
         return {"items": [], "total": 0.0}
     top = dim_records[:6]
     items = [{"name": row["name"], "value": row["value"]} for row in top]
@@ -522,7 +536,7 @@ def _share_data(dim_records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _pareto_data(dim_records: list[dict[str, Any]]) -> dict[str, Any]:
-    if len(dim_records) < 2:
+    if len(dim_records) < 2 or any(row.get("cumulative_share") is None for row in dim_records):
         return {"categories": [], "values": [], "cumulative": []}
     top = dim_records[:12]
     return {
@@ -1114,7 +1128,11 @@ def _build_insights(
     else:
         dimension_label = "分组"
     top = dim_records[0] if dim_records else None
-    top3_share = sum(row["share"] for row in dim_records[:3]) if dim_records else None
+    top3_share = (
+        sum(row["share"] for row in dim_records[:3])
+        if dim_records and all(row.get("share") is not None for row in dim_records[:3])
+        else None
+    )
 
     # 1) Scale fact
     scope = (
@@ -1165,9 +1183,8 @@ def _build_insights(
                 )
             )
 
-    # 3) Structure / concentration
-    if top:
-        pareto_category_count = pareto.get("categories", [])
+    # 3) Structure / concentration (only meaningful for additive metrics)
+    if top and top.get("share") is not None:
         reaching = next(
             (index + 1 for index, value in enumerate(pareto.get("cumulative", [])) if value >= 80),
             None,
@@ -1317,11 +1334,16 @@ def _pareto_insight(pareto: dict[str, Any], metric_type: str) -> str:
     )
 
 
-def _metric_total(frame: pd.DataFrame, metric: str) -> float:
+def _metric_total(frame: pd.DataFrame, metric: str, fields: dict[str, FieldSpec]) -> float:
     if frame is None or frame.empty:
         return 0.0
     if metric == "__record":
         return float(len(frame))
     if metric not in frame.columns:
         return 0.0
-    return float(pd.to_numeric(frame[metric], errors="coerce").sum())
+    series = pd.to_numeric(frame[metric], errors="coerce")
+    if metric in fields and fields[metric].aggregation == "AVG":
+        value = series.mean()
+    else:
+        value = series.sum()
+    return float(value) if pd.notna(value) else 0.0

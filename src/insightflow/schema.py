@@ -26,8 +26,8 @@ FIELD_META: dict[str, dict[str, Any]] = {
     "customers": {"label": "客户数", "kind": "metric", "unit": "人", "priority": 65, "format": "int"},
     "profit": {"label": "利润", "kind": "metric", "unit": "元", "priority": 60, "format": "money"},
     "cost": {"label": "成本", "kind": "metric", "unit": "元", "priority": 55, "format": "money"},
-    "price": {"label": "单价", "kind": "metric", "unit": "元", "priority": 50, "format": "money"},
-    "discount": {"label": "折扣", "kind": "metric", "unit": "%", "priority": 40, "format": "percent"},
+    "price": {"label": "单价", "kind": "metric", "unit": "元", "priority": 50, "format": "money", "aggregation": "AVG"},
+    "discount": {"label": "折扣", "kind": "metric", "unit": "%", "priority": 40, "format": "percent", "aggregation": "AVG"},
     "region": {"label": "区域", "kind": "dimension", "unit": "", "priority": 92, "format": "text"},
     "category": {"label": "品类", "kind": "dimension", "unit": "", "priority": 95, "format": "text"},
     "channel": {"label": "渠道", "kind": "dimension", "unit": "", "priority": 88, "format": "text"},
@@ -105,6 +105,10 @@ _RATE_HEADER_MARKERS = ("率", "占比", "比例", "百分比", "同比", "环�
 _NEGATIVE_HEADER_PREFIXES = ("非", "不是", "排除", "不计", "不包含", "未包含")
 
 
+def _is_rate_header(key: str) -> bool:
+    return any(marker in key for marker in _RATE_HEADER_MARKERS)
+
+
 def _is_non_additive_header(key: str) -> bool:
     """Reject headers whose values must not be summed as amounts.
 
@@ -114,7 +118,7 @@ def _is_non_additive_header(key: str) -> bool:
     """
     if any(key.startswith(prefix) for prefix in _NEGATIVE_HEADER_PREFIXES):
         return True
-    return any(marker in key for marker in _RATE_HEADER_MARKERS)
+    return _is_rate_header(key)
 
 
 def match_alias(header: Any) -> tuple[str | None, float]:
@@ -182,12 +186,29 @@ def _numeric_rate(series: pd.Series) -> tuple[float, int]:
     return valid / len(values), valid
 
 
-def _date_rate(series: pd.Series) -> tuple[float, int]:
+def _date_rate(series: pd.Series, date_order: str = "month_first") -> tuple[float, int]:
     values = _series_values(series)
     if not values:
         return 0.0, 0
-    valid = sum(1 for value in values if parse_date_value(value) is not None)
+    valid = sum(1 for value in values if parse_date_value(value, date_order=date_order) is not None)
     return valid / len(values), valid
+
+
+_AMBIGUOUS_DATE_RE = re.compile(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})(?:[T\s].*)?$")
+
+
+def ambiguous_date_count(series: pd.Series) -> int:
+    """Count DD/MM/YYYY-shaped values where day and month are both <= 12."""
+    count = 0
+    for value in _series_values(series, 8000):
+        text = normalize_text(value)
+        match = _AMBIGUOUS_DATE_RE.match(text)
+        if not match:
+            continue
+        first, second = int(match.group(1)), int(match.group(2))
+        if first <= 12 and second <= 12:
+            count += 1
+    return count
 
 
 def _looks_like_id(header: str, series: pd.Series) -> bool:
@@ -202,7 +223,7 @@ def _looks_like_id(header: str, series: pd.Series) -> bool:
     return unique_ratio > 0.92 and integer_like
 
 
-def detect_schema(df: pd.DataFrame, header_scan: int = 20) -> TableSchema:
+def detect_schema(df: pd.DataFrame, header_scan: int = 20, date_order: str = "month_first") -> TableSchema:
     """Infer canonical roles for every source column.
 
     ``header_scan`` is accepted for symmetry with the reader; the dataframe is
@@ -231,18 +252,20 @@ def detect_schema(df: pd.DataFrame, header_scan: int = 20) -> TableSchema:
         canonical, confidence = match_alias(column)
         unit, multiplier = _extract_unit(column, canonical)
         numeric_rate, _ = _numeric_rate(series)
-        date_rate, _ = _date_rate(series)
+        date_rate, _ = _date_rate(series, date_order=date_order)
 
         kind: str
         label: str
         priority: int
         value_format = "number"
+        aggregation = "SUM"
         if canonical:
             meta = FIELD_META.get(canonical, {})
             kind = str(meta.get("kind", "text"))
             label = str(meta.get("label", normalize_text(column)))
             priority = int(meta.get("priority", 0))
             value_format = str(meta.get("format", "number"))
+            aggregation = str(meta.get("aggregation", "SUM"))
             if not unit:
                 unit = str(meta.get("unit", ""))
         else:
@@ -279,6 +302,7 @@ def detect_schema(df: pd.DataFrame, header_scan: int = 20) -> TableSchema:
                 label = maybe_repair_text(normalize_text(column)) or "指标"
                 priority = 12
                 value_format = "number"
+                aggregation = "AVG" if _is_rate_header(normalize_header_key(column)) else "SUM"
             elif date_rate >= 0.82 and not _looks_like_id(column, series):
                 kind = "date"
                 label = "日期"
@@ -295,6 +319,20 @@ def detect_schema(df: pd.DataFrame, header_scan: int = 20) -> TableSchema:
             continue
 
         if kind in {"date", "timestamp"}:
+            ambiguous = ambiguous_date_count(series)
+            if ambiguous:
+                if date_order == "error":
+                    message = (
+                        f"字段「{label}」有 {ambiguous} 个 X/Y/YYYY 日期无法区分日月，"
+                        "已按 date_order=error 跳过这些值；如需解析请设置 month_first / day_first。"
+                    )
+                else:
+                    assumed = "月/日/年（month_first）" if date_order == "month_first" else "日/月/年（day_first）"
+                    message = (
+                        f"字段「{label}」有 {ambiguous} 个 X/Y/YYYY 日期无法区分日月，"
+                        f"已按 {assumed} 解析；如与源系统不符，请设置 config.date_order。"
+                    )
+                issues.append(FileIssue("date_order_ambiguous", message, severity="warning"))
             date_candidates.append(
                 DateCandidate(
                     column=str(column),
@@ -339,6 +377,7 @@ def detect_schema(df: pd.DataFrame, header_scan: int = 20) -> TableSchema:
             unique_count=unique_count,
             multiplier=multiplier,
             value_format=value_format,
+            aggregation=aggregation,
         )
         fields[canonical] = field
         column_map[str(column)] = canonical

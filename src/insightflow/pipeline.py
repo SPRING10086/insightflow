@@ -438,8 +438,8 @@ def _prepare(
     header_repairs = 0
 
     for table in read_result.tables:
-        schema = detect_schema(table.frame, settings.header_scan_rows)
-        extraction = extract_periods(table, schema, target, baseline)
+        schema = detect_schema(table.frame, settings.header_scan_rows, date_order=settings.date_order)
+        extraction = extract_periods(table, schema, target, baseline, date_order=settings.date_order)
         extractions.append((table, extraction))
         header_repairs += int(getattr(table, "header_repairs", 0) or 0)
         key = f"{table.source.relative_path} :: {table.sheet_label}"

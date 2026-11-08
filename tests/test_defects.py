@@ -26,6 +26,8 @@ from insightflow.config import load_settings  # noqa: E402
 from insightflow.models import SourceFile  # noqa: E402
 from insightflow.normalize import extract_periods  # noqa: E402
 from insightflow.readers import read_csv_file, read_excel_file, read_sources  # noqa: E402
+from insightflow import analysis as analysis_module  # noqa: E402
+from insightflow import planner  # noqa: E402
 from insightflow import scheduler  # noqa: E402
 from insightflow.schema import detect_schema  # noqa: E402
 from insightflow.utils import parse_date_value, read_json  # noqa: E402
@@ -81,7 +83,7 @@ class DefectRegressionTests(unittest.TestCase):
         workbook.save(path)
 
         settings = self._settings(max_rows=5)
-        tables, _ = read_excel_file(self._source(path), settings)
+        tables, _, _ = read_excel_file(self._source(path), settings)
         self.assertEqual(len(tables), 1)
         self.assertEqual(len(tables[0].frame), 5)
         self.assertFalse(tables[0].truncated)
@@ -92,7 +94,7 @@ class DefectRegressionTests(unittest.TestCase):
             + "".join(f"2026-11-0{index + 1},华东,{100 + index}\n" for index in range(5)),
             encoding="utf-8-sig",
         )
-        csv_tables, _ = read_csv_file(self._source(csv_path), settings)
+        csv_tables, _, _ = read_csv_file(self._source(csv_path), settings)
         self.assertEqual(len(csv_tables[0].frame), 5)
         self.assertFalse(csv_tables[0].truncated)
 
@@ -109,7 +111,7 @@ class DefectRegressionTests(unittest.TestCase):
             encoding="utf-8-sig",
         )
         settings = self._settings(max_rows=200)
-        tables, _ = read_csv_file(self._source(path), settings)
+        tables, _, _ = read_csv_file(self._source(path), settings)
         schema = detect_schema(tables[0].frame)
         extraction = extract_periods(tables[0], schema, date(2026, 11, 7), date(2026, 11, 6))
         self.assertEqual(extraction.target["__source_row"].tolist(), [5, 6])
@@ -129,7 +131,7 @@ class DefectRegressionTests(unittest.TestCase):
         workbook.save(path)
 
         settings = self._settings(max_rows=200)
-        tables, _ = read_excel_file(self._source(path), settings)
+        tables, _, _ = read_excel_file(self._source(path), settings)
         schema = detect_schema(tables[0].frame)
         extraction = extract_periods(tables[0], schema, date(2026, 11, 7), date(2026, 11, 6))
         self.assertEqual(extraction.target["__source_row"].tolist(), [5, 6])
@@ -155,11 +157,64 @@ class DefectRegressionTests(unittest.TestCase):
                 self.assertNotIn(field.canonical, {"revenue", "profit", "cost", "orders"})
                 self.assertNotEqual(field.canonical, "revenue")
 
+    def test_rate_metric_uses_average_and_skips_share(self):
+        settings = self._settings(max_rows=200)
+        schema = detect_schema(
+            pd.DataFrame(
+                {
+                    "日期": ["2026-11-07"] * 3,
+                    "区域": ["华东", "华东", "华南"],
+                    "毛利率": [30.0, 40.0, 50.0],
+                }
+            ),
+            date_order=settings.date_order,
+        )
+        rate_field = next(field for field in schema.fields.values() if field.original == "毛利率")
+        self.assertEqual(rate_field.aggregation, "AVG")
+
+        target = pd.DataFrame(
+            {
+                "__date": [date(2026, 11, 7)] * 3,
+                "__hour": [None] * 3,
+                "region": ["华东", "华东", "华南"],
+                rate_field.canonical: [30.0, 40.0, 50.0],
+            }
+        )
+        fields = {rate_field.canonical: rate_field, "region": schema.fields["region"]}
+        totals = analysis_module._totals(target, fields)
+        self.assertAlmostEqual(totals["metrics"][rate_field.canonical], 40.0)
+        _, records = analysis_module._dimension_table(target, "region", rate_field.canonical, fields)
+        self.assertTrue(all(record["share"] is None for record in records))
+
+        plan = planner.build_plan(
+            target,
+            pd.DataFrame(),
+            fields,
+            date(2026, 11, 7),
+            None,
+            settings,
+        )
+        definition = next(
+            item for item in plan.metric_definitions if item.key == rate_field.canonical
+        )
+        self.assertEqual(definition.aggregation, "AVG")
+        self.assertTrue(definition.formula.startswith("AVG("))
+        share_step = next(step for step in plan.steps if step.step_id == "share")
+        self.assertFalse(share_step.enabled)
+
     # P1-4 -----------------------------------------------------------------
-    def test_ambiguous_dates_default_to_day_first(self):
+    def test_ambiguous_dates_default_to_month_first(self):
+        # 03/04 is March 4 under month-first (the default).
         self.assertEqual(parse_date_value("03/04/2026"), date(2026, 3, 4))
         self.assertEqual(parse_date_value("15/04/2026"), date(2026, 4, 15))
         self.assertEqual(parse_date_value("04/15/2026"), date(2026, 4, 15))
+        self.assertEqual(parse_date_value("03/04/2026", date_order="day_first"), date(2026, 4, 3))
+
+    def test_ambiguous_dates_emit_warning(self):
+        schema = detect_schema(
+            pd.DataFrame({"日期": ["03/04/2026", "2026-11-07"], "销售额": [1, 2]})
+        )
+        self.assertTrue(any(issue.code == "date_order_ambiguous" for issue in schema.issues))
 
     # P1-5 -----------------------------------------------------------------
     def test_sheets_skipped_counts_empty_sheets(self):
@@ -178,10 +233,24 @@ class DefectRegressionTests(unittest.TestCase):
         self.assertEqual(report.sheets_read, 1)
         self.assertEqual(report.sheets_skipped, 1)
 
+    def test_all_sheets_empty_still_reports_two_skipped(self):
+        path = self.tmp / "raw" / "all_empty.xlsx"
+        workbook = Workbook()
+        workbook.active.title = "Empty1"
+        workbook.create_sheet("Empty2")
+        workbook.save(path)
+
+        settings = self._settings(max_rows=200)
+        result = read_sources([self._source(path)], settings, self.tmp / "raw")
+        report = result.file_reports[0]
+        self.assertEqual(report.sheets_read, 0)
+        self.assertEqual(report.sheets_skipped, 2)
+
     # P1-6 -----------------------------------------------------------------
     def test_trigger_is_due_within_grace_window_not_35_seconds(self):
         settings = self._settings(max_rows=200)
-        now = datetime(2026, 11, 8, 9, 45, tzinfo=timezone(timedelta(hours=8)))
+        # 90 minutes after the schedule, still inside the 180-minute grace.
+        now = datetime(2026, 11, 8, 11, 0, tzinfo=timezone(timedelta(hours=8)))
         self.assertTrue(scheduler.trigger_is_due(settings, "09:30", now, state={}))
 
     def test_failed_trigger_is_not_marked_as_completed_and_can_retry(self):

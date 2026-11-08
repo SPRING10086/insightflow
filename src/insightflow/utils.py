@@ -56,18 +56,20 @@ def now_local(tz_name: str | None = None) -> datetime:
     return datetime.now().astimezone()
 
 
-def parse_date_value(value: Any) -> date | None:
+def parse_date_value(value: Any, date_order: str = "month_first") -> date | None:
     """Parse the many date shapes found in exported business spreadsheets.
 
     Supports Excel serials, ``datetime`` objects, ISO strings, Chinese date
     strings, compact ``YYYYMMDD`` and common ``D/M/Y`` / ``M/D/Y`` forms.
     Unparseable values return ``None`` rather than silently inventing a date.
 
-    Ambiguous values such as ``03/04/2026`` are interpreted **day-first**
-    (2026-03-04), because this is the dominant convention for the Chinese /
-    European exports this tool targets.  Use ISO ``YYYY-MM-DD`` when the
-    source system may be US month-first.
+    Ambiguous values such as ``03/04/2026`` are interpreted **month-first**
+    (2026-03-04) by default.  Set ``date_order="day_first"`` for European
+    exports (2026-04-03), or ``"error"`` to skip ambiguous values.  Prefer ISO
+    ``YYYY-MM-DD`` whenever the source system is outside your control.
     """
+    if date_order not in {"month_first", "day_first", "error"}:
+        raise ValueError(f"date_order 必须是 month_first / day_first / error: {date_order!r}")
     if value is None:
         return None
     if isinstance(value, pd.Timestamp):
@@ -103,12 +105,16 @@ def parse_date_value(value: Any) -> date | None:
     if match:
         first, second, year = (int(part) for part in match.groups())
         # Explicit day/month evidence wins.  When both components are <=12
-        # the value is ambiguous; default to day-first (DD/MM/YYYY).
+        # the value is ambiguous; resolve it via the configured date_order.
         if first > 12 and second <= 12:
             return _date_from_ymd(year, second, first)
         if second > 12 and first <= 12:
             return _date_from_ymd(year, first, second)
         if first <= 12 and second <= 12:
+            if date_order == "error":
+                return None
+            if date_order == "day_first":
+                return _date_from_ymd(year, second, first)
             return _date_from_ymd(year, first, second)
 
     try:
@@ -120,7 +126,7 @@ def parse_date_value(value: Any) -> date | None:
     return None
 
 
-def parse_timestamp_value(value: Any) -> datetime | None:
+def parse_timestamp_value(value: Any, date_order: str = "month_first") -> datetime | None:
     """Parse a timestamp while preserving a usable time-of-day component."""
     if value is None:
         return None
@@ -155,7 +161,7 @@ def parse_timestamp_value(value: Any) -> datetime | None:
         today = datetime.now().date()
         return _safe_datetime(today.year, today.month, today.day, int(hour), int(minute), int(second or 0))
 
-    parsed_date = parse_date_value(text)
+    parsed_date = parse_date_value(text, date_order=date_order)
     if parsed_date:
         # Capture a trailing HH:MM if present.
         time_match = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", text)
