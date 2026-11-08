@@ -68,6 +68,7 @@ sequenceDiagram
 | `pipeline.py` | 编排、锁、幂等、产物、日志、异常边界 | 具体算法 |
 | `scheduler.py` | Windows Task XML / schtasks / daemon / 补跑 | 分析逻辑 |
 | `logging_setup.py` | 轮转文本日志 + JSONL + 最近一次记录 | 业务状态 |
+| `gui/` | 桌面操作端：主窗口与四分区、后台线程与消息队列、锁定环境自检 | 任何业务计算（一律调用 `pipeline.execute()`） |
 
 ---
 
@@ -220,3 +221,24 @@ customer_id, order_id, ...
 2. **规则引擎优先于 LLM**：日更报告需要可复现、可解释、零 token 成本；LLM 更适合作为后续“归因建议”增强，而不是计算核心。
 3. **报告内嵌数据表**：图表是沟通层，表格才是审计层；两者必须来自同一份 `ChartSpec.data`。
 4. **只标记异常，不删除异常**：日更场景下大额订单是信号，不是噪声。
+
+---
+
+## 11. 桌面操作端（GUI）
+
+操作端是**编排与展示层**，让不接触命令行的操作员完成「放数据 → 运行 → 取报告」。核心流水线在无 GUI 时仍可独立运行。
+
+```text
+gui/__main__.py   入口：stderr 兜底、加载配置、DPI、启动门禁
+gui/app.py        主窗口：顶部状态条 + 四分区 + 底部工具条；after() 轮询消息
+gui/worker.py     单工作线程 + queue.Queue；4 种消息（started/progress/done/failed）
+gui/envcheck.py   锁定环境比对（读 requirements.lock.txt，importlib.metadata 取版本）
+```
+
+硬规则：
+
+- `app.py` / `worker.py` **不 import** `pipeline`、`readers`、`analysis`、`pandas`；业务动作只能经由后续新增的 `gui/services.py` 调用 `pipeline.execute()`；
+- Tk 控件只在主线程操作，工作线程只经队列回消息（Tk 非线程安全）；
+- 环境与锁定清单不一致时，启动门禁**默认阻断**（fail-closed），不静默放行；
+- `python -m insightflow.gui` 与 `启动操作端.bat` 均可启动；CLI 与计划任务不受影响。
+
