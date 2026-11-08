@@ -446,8 +446,12 @@ def _prepare(
         if extraction.selected_column:
             date_columns[key] = extraction.selected_column
         if extraction.target.empty and extraction.baseline.empty:
-            # Cover sheets and unrelated tabs should not pollute the quality
-            # section with "no date/no metric" warnings.
+            # Keep the date-order warning even when the wrong assumption
+            # produced zero target rows: this is exactly when the operator
+            # needs to see it.  Other cover-sheet warnings stay quiet.
+            for issue in schema.issues:
+                if issue.code == "date_order_ambiguous":
+                    warnings.append(issue.as_text())
             continue
         for issue in schema.issues:
             if issue.severity in {"warning", "error"}:

@@ -42,7 +42,7 @@
 - 新增 `requirements.lock.txt`，固定验证过的依赖版本。
 - `run_scheduled.ps1` 不再用 `*> $null` 吞掉排障输出；完整 UTF-8 输出写入 `logs/scheduler_console.log`。
 - 锁过期时间从 4 小时调整为 150 分钟，与 Windows 任务 2 小时超时对齐。
-- 新增 GitHub Actions `tests.yml`，在 Windows + Python 3.10 上跑 40 个测试。
+- 新增 GitHub Actions `tests.yml`，在 Windows + Python 3.10 上跑 41 个测试。
 
 ### P2 仍待处理
 
@@ -52,5 +52,5 @@
 
 ### 验证
 
-- `python -m unittest discover -s tests`：**40 tests OK**。
+- `python -m unittest discover -s tests`：**41 tests OK**。
 - 新增 `tests/test_defects.py`，每个缺陷先有失败测试再修复。

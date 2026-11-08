@@ -27,6 +27,7 @@ from insightflow.models import SourceFile  # noqa: E402
 from insightflow.normalize import extract_periods  # noqa: E402
 from insightflow.readers import read_csv_file, read_excel_file, read_sources  # noqa: E402
 from insightflow import analysis as analysis_module  # noqa: E402
+from insightflow import pipeline as pipeline_module  # noqa: E402
 from insightflow import planner  # noqa: E402
 from insightflow import scheduler  # noqa: E402
 from insightflow.schema import detect_schema  # noqa: E402
@@ -156,6 +157,20 @@ class DefectRegressionTests(unittest.TestCase):
                 field = mapping[header]
                 self.assertNotIn(field.canonical, {"revenue", "profit", "cost", "orders"})
                 self.assertNotEqual(field.canonical, "revenue")
+
+    def test_date_order_warning_survives_no_target_rows(self):
+        path = self.tmp / "raw" / "ambiguous.csv"
+        path.write_text("日期,销售额\n03/04/2026,100\n", encoding="utf-8-sig")
+        settings = self._settings(max_rows=200)
+        read_result = read_sources([self._source(path)], settings, self.tmp / "raw")
+        prepared = pipeline_module._prepare(
+            read_result=read_result,
+            target=date(2026, 4, 3),  # default month-first would not match
+            baseline=None,
+            settings=settings,
+        )
+        self.assertTrue(prepared["target_raw"].empty)
+        self.assertTrue(any("date_order_ambiguous" in warning for warning in prepared["warnings"]))
 
     def test_rate_metric_uses_average_and_skips_share(self):
         settings = self._settings(max_rows=200)
