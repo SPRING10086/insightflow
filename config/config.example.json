@@ -1,0 +1,33 @@
+{
+  "app_name": "InsightFlow",
+  "version": "1.0.0",
+  "timezone": "Asia/Shanghai",
+  "source_dir": "examples/raw",
+  "output_dir": "output",
+  "log_dir": "logs",
+  "state_dir": "state",
+  "schedule_time": "09:30",
+  "target_date_mode": "previous_day",
+  "recursive_scan": true,
+  "include_extensions": [".xlsx", ".xls", ".csv"],
+  "max_file_mb": 50,
+  "max_rows_per_file": 200000,
+  "header_scan_rows": 20,
+  "outlier_iqr_k": 1.5,
+  "top_n": 8,
+  "max_charts": 8,
+  "comparison": {
+    "enabled": true,
+    "lookback_days": 1
+  },
+  "report": {
+    "title": "每日经营数据洞察报告",
+    "company": "InsightFlow · Portfolio Demo",
+    "max_table_rows": 100,
+    "accent": "#2563eb"
+  },
+  "scheduler": {
+    "task_name": "InsightFlow_Daily_0930",
+    "grace_minutes": 180
+  }
+}

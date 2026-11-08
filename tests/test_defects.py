@@ -1,0 +1,203 @@
+"""Regression tests for the P0/P1 audit findings.
+
+These tests are intentionally written before the fixes.  Each one targets a
+silent-wrong-number failure mode, not an obvious crash.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+import tempfile
+import unittest
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pandas as pd
+from openpyxl import Workbook
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from insightflow.config import load_settings  # noqa: E402
+from insightflow.models import SourceFile  # noqa: E402
+from insightflow.normalize import extract_periods  # noqa: E402
+from insightflow.readers import read_csv_file, read_excel_file, read_sources  # noqa: E402
+from insightflow import scheduler  # noqa: E402
+from insightflow.schema import detect_schema  # noqa: E402
+from insightflow.utils import parse_date_value, read_json  # noqa: E402
+
+
+class DefectRegressionTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="insightflow-defect-", dir=str(ROOT / "tests")))
+        (self.tmp / "raw").mkdir()
+        (self.tmp / "config").mkdir()
+        (self.tmp / "config" / "config.json").write_text(
+            json.dumps(
+                {
+                    "source_dir": "raw",
+                    "output_dir": "out",
+                    "log_dir": "logs",
+                    "state_dir": "state",
+                    "max_rows_per_file": 5,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _settings(self, max_rows: int = 5):
+        settings = load_settings(project_root=self.tmp)
+        settings.max_rows_per_file = max_rows
+        settings.ensure_runtime_dirs()
+        return settings
+
+    def _source(self, path: Path) -> SourceFile:
+        stat = path.stat()
+        return SourceFile(
+            path=path,
+            relative_path=path.name,
+            suffix=path.suffix.lower(),
+            size_bytes=stat.st_size,
+            modified_at=datetime.now().astimezone(),
+        )
+
+    # P0-1 -----------------------------------------------------------------
+    def test_excel_does_not_lose_one_row_at_the_business_row_limit(self):
+        """Exactly N business rows must survive, with header row excluded."""
+        path = self.tmp / "raw" / "exactly_five.xlsx"
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Data"
+        sheet.append(["日期", "区域", "销售额"])
+        for index in range(5):
+            sheet.append([f"2026-11-0{index + 1}", "华东", 100 + index])
+        workbook.save(path)
+
+        settings = self._settings(max_rows=5)
+        tables, _ = read_excel_file(self._source(path), settings)
+        self.assertEqual(len(tables), 1)
+        self.assertEqual(len(tables[0].frame), 5)
+        self.assertFalse(tables[0].truncated)
+
+        csv_path = self.tmp / "raw" / "exactly_five.csv"
+        csv_path.write_text(
+            "日期,区域,销售额\n"
+            + "".join(f"2026-11-0{index + 1},华东,{100 + index}\n" for index in range(5)),
+            encoding="utf-8-sig",
+        )
+        csv_tables, _ = read_csv_file(self._source(csv_path), settings)
+        self.assertEqual(len(csv_tables[0].frame), 5)
+        self.assertFalse(csv_tables[0].truncated)
+
+    # P0-2 -----------------------------------------------------------------
+    def test_source_row_uses_physical_csv_line_not_filtered_position(self):
+        path = self.tmp / "raw" / "lineage.csv"
+        path.write_text(
+            "销售日报\n"
+            "日期,区域,销售额\n"
+            "2026-11-05,华东,100\n"
+            "2026-11-06,华东,110\n"
+            "2026-11-07,华东,120\n"
+            "2026-11-07,华南,130\n",
+            encoding="utf-8-sig",
+        )
+        settings = self._settings(max_rows=200)
+        tables, _ = read_csv_file(self._source(path), settings)
+        schema = detect_schema(tables[0].frame)
+        extraction = extract_periods(tables[0], schema, date(2026, 11, 7), date(2026, 11, 6))
+        self.assertEqual(extraction.target["__source_row"].tolist(), [5, 6])
+        self.assertEqual(extraction.baseline["__source_row"].tolist(), [4])
+
+    def test_excel_source_row_uses_physical_sheet_row(self):
+        path = self.tmp / "raw" / "lineage.xlsx"
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Data"
+        sheet.append(["销售日报"])
+        sheet.append(["日期", "区域", "销售额"])
+        sheet.append(["2026-11-05", "华东", 100])
+        sheet.append(["2026-11-06", "华东", 110])
+        sheet.append(["2026-11-07", "华东", 120])
+        sheet.append(["2026-11-07", "华南", 130])
+        workbook.save(path)
+
+        settings = self._settings(max_rows=200)
+        tables, _ = read_excel_file(self._source(path), settings)
+        schema = detect_schema(tables[0].frame)
+        extraction = extract_periods(tables[0], schema, date(2026, 11, 7), date(2026, 11, 6))
+        self.assertEqual(extraction.target["__source_row"].tolist(), [5, 6])
+        self.assertEqual(extraction.baseline["__source_row"].tolist(), [4])
+
+    # P1-3 -----------------------------------------------------------------
+    def test_rate_and_negative_headers_are_not_summed_as_amount_metrics(self):
+        frame = pd.DataFrame(
+            {
+                "日期": ["2026-11-07", "2026-11-07"],
+                "销售额": [100.0, 200.0],
+                "毛利率": [30.0, 35.0],
+                "利润率": [10.0, 12.0],
+                "非销售额": [1.0, 2.0],
+            }
+        )
+        schema = detect_schema(frame)
+        mapping = {field.original: field for field in schema.fields.values()}
+        self.assertEqual(mapping["销售额"].canonical, "revenue")
+        for header in ("毛利率", "利润率", "非销售额"):
+            with self.subTest(header=header):
+                field = mapping[header]
+                self.assertNotIn(field.canonical, {"revenue", "profit", "cost", "orders"})
+                self.assertNotEqual(field.canonical, "revenue")
+
+    # P1-4 -----------------------------------------------------------------
+    def test_ambiguous_dates_default_to_day_first(self):
+        self.assertEqual(parse_date_value("03/04/2026"), date(2026, 3, 4))
+        self.assertEqual(parse_date_value("15/04/2026"), date(2026, 4, 15))
+        self.assertEqual(parse_date_value("04/15/2026"), date(2026, 4, 15))
+
+    # P1-5 -----------------------------------------------------------------
+    def test_sheets_skipped_counts_empty_sheets(self):
+        path = self.tmp / "raw" / "two_sheets.xlsx"
+        workbook = Workbook()
+        data = workbook.active
+        data.title = "Data"
+        data.append(["日期", "区域", "销售额"])
+        data.append(["2026-11-07", "华东", 100])
+        workbook.create_sheet("Empty")
+        workbook.save(path)
+
+        settings = self._settings(max_rows=200)
+        result = read_sources([self._source(path)], settings, self.tmp / "raw")
+        report = result.file_reports[0]
+        self.assertEqual(report.sheets_read, 1)
+        self.assertEqual(report.sheets_skipped, 1)
+
+    # P1-6 -----------------------------------------------------------------
+    def test_trigger_is_due_within_grace_window_not_35_seconds(self):
+        settings = self._settings(max_rows=200)
+        now = datetime(2026, 11, 8, 9, 45, tzinfo=timezone(timedelta(hours=8)))
+        self.assertTrue(scheduler.trigger_is_due(settings, "09:30", now, state={}))
+
+    def test_failed_trigger_is_not_marked_as_completed_and_can_retry(self):
+        settings = self._settings(max_rows=200)
+        now = datetime(2026, 11, 8, 9, 30, tzinfo=timezone(timedelta(hours=8)))
+        failed = SimpleNamespace(status="failed", run_id="run-failed", report_path="")
+        with patch("insightflow.scheduler.execute", return_value=failed):
+            scheduler._trigger(settings, now)
+        state = read_json(settings.state_dir / "scheduler_state.json", default={}) or {}
+        self.assertNotIn("last_triggered_date", state)
+        self.assertEqual(state.get("last_status"), "failed")
+        self.assertIn("last_attempt_at", state)
+
+        retry_now = now + timedelta(minutes=10)
+        self.assertTrue(scheduler.trigger_is_due(settings, "09:30", retry_now, state=state))
+
+
+if __name__ == "__main__":
+    unittest.main()

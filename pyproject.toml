@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "insightflow"
+version = "1.0.0"
+description = "Offline-first, scheduled data profiling, cleaning, analysis and single-file HTML reporting pipeline."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "InsightFlow" }]
+keywords = ["data-analysis", "etl", "reporting", "echarts", "offline", "scheduler"]
+dependencies = [
+  "pandas>=2.0",
+  "numpy>=1.24",
+  "openpyxl>=3.1",
+  "xlrd>=2.0.1",
+  "tzdata>=2023.3; platform_system == 'Windows'"
+]
+
+[project.scripts]
+insightflow = "insightflow.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+insightflow = ["templates/*.html", "assets/*.js", "assets/*.txt"]

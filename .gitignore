@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+Thumbs.db
+
+# Local machine paths; use config/config.example.json as the tracked template
+config/config.json
+
+# Runtime artifacts
+output/*
+!output/.gitkeep
+logs/*
+!logs/.gitkeep
+state/*
+!state/.gitkeep
+*.lock
+*.tmp
+tests/insightflow-test-*/
+my_data/
+.edge-profile/
+
+# Generated demo screenshots are intentionally kept under docs/images/
+!docs/images/

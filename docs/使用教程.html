@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InsightFlow 零基础使用教程</title>
+<style>
+:root{
+  --ink:#0f172a; --ink2:#1e293b; --muted:#64748b; --muted2:#94a3b8;
+  --line:#e2e8f0; --bg:#f4f7fb; --card:#fff; --soft:#f8fafc;
+  --blue:#2563eb; --blue2:#1d4ed8; --teal:#0d9488; --amber:#d97706; --rose:#e11d48; --violet:#7c3aed;
+  --green:#059669; --shadow:0 12px 30px rgba(15,23,42,.06);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased;
+}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:.88em}
+.hero{position:relative;overflow:hidden;background:linear-gradient(125deg,#0b1220,#10233f 58%,#0d3148);color:#fff}
+.hero:before{content:"";position:absolute;inset:0;opacity:.25;background-image:linear-gradient(rgba(148,163,184,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.16) 1px,transparent 1px);background-size:38px 38px;mask-image:linear-gradient(#000,transparent 85%)}
+.hero-inner{position:relative;z-index:1;max-width:1320px;margin:0 auto;padding:52px 28px 58px}
+.topline{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:11px;font-weight:700;letter-spacing:.02em}
+.mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#3b82f6,#0d9488);display:grid;place-items:center;box-shadow:0 8px 20px rgba(37,99,235,.35)}
+.mark svg{width:21px;height:21px}
+.brand small{display:block;color:#94a3b8;font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:500}
+.actions{display:flex;gap:9px;flex-wrap:wrap}
+.btn{border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:8px 13px;font-size:12px;cursor:pointer}
+.btn:hover{background:rgba(255,255,255,.16)}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;color:#93c5fd;font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;margin-top:38px}
+.eyebrow:before{content:"";width:26px;height:2px;background:#38bdf8}
+h1{font-size:clamp(32px,4.6vw,54px);line-height:1.13;letter-spacing:-.04em;margin:14px 0 14px;font-weight:760}
+.lead{color:#cbd5e1;max-width:820px;font-size:15px;margin:0}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+.chip{border:1px solid rgba(148,163,184,.28);background:rgba(15,23,42,.25);border-radius:999px;padding:6px 11px;font-size:11px;color:#dbeafe}
+.chip b{color:#fff}
+.layout{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:238px minmax(0,1fr);gap:36px;padding:30px 28px 54px;align-items:start}
+.toc{position:sticky;top:18px;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:16px;box-shadow:var(--shadow)}
+.toc h2{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted2);margin:0 0 9px}
+.toc a{display:block;color:var(--muted);font-size:12px;padding:6px 8px;border-radius:7px;line-height:1.4}
+.toc a:hover,.toc a.active{background:#eaf1ff;color:var(--blue);text-decoration:none}
+.toc .sub{padding-left:18px;font-size:11px}
+main{min-width:0}
+section{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:26px 28px;margin-bottom:18px;box-shadow:0 5px 18px rgba(15,23,42,.035);scroll-margin-top:18px}
+h2{font-size:23px;letter-spacing:-.025em;margin:0 0 5px;font-weight:750}
+h3{font-size:16px;margin:24px 0 8px;letter-spacing:-.01em}
+h4{font-size:13px;margin:18px 0 6px;color:var(--ink2)}
+p{margin:8px 0}
+.subtitle{color:var(--muted);font-size:12px;margin:0 0 16px}
+.tag{font-size:10px;letter-spacing:.12em;color:var(--blue);font-weight:700;text-transform:uppercase}
+.note,.warn,.tip,.danger{border-radius:11px;padding:12px 14px;margin:13px 0;font-size:13px;border:1px solid}
+.note{background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a}
+.warn{background:#fffbeb;border-color:#fde68a;color:#78350f}
+.tip{background:#f0fdfa;border-color:#99f6e4;color:#115e59}
+.danger{background:#fff1f2;border-color:#fecdd3;color:#881337}
+.note b,.warn b,.tip b,.danger b{font-weight:700}
+.steps{display:grid;gap:10px;margin:14px 0}
+.step{display:grid;grid-template-columns:30px minmax(0,1fr);gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px 13px;background:#fbfdff}
+.step .num{width:26px;height:26px;border-radius:50%;background:#dbeafe;color:#1d4ed8;display:grid;place-items:center;font-size:11px;font-weight:800;margin-top:1px}
+.step b{display:block;font-size:13px;margin-bottom:1px}
+.step p{margin:0;color:var(--muted);font-size:12px}
+.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:18px 0}
+.flow .node{background:linear-gradient(180deg,#f8fbff,#eef5ff);border:1px solid #dbeafe;border-radius:10px;padding:11px 9px;text-align:center;position:relative}
+.flow .node b{display:block;font-size:12px;color:#1e3a8a}
+.flow .node small{display:block;font-size:10px;color:#64748b;line-height:1.4;margin-top:3px}
+.flow .node:not(:last-child):after{content:"→";position:absolute;right:-9px;top:50%;transform:translateY(-50%);color:#93c5fd;font-weight:800;font-size:12px;z-index:1}
+pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:13px 15px;overflow:auto;font-size:12px;line-height:1.7;position:relative;margin:10px 0}
+pre code{color:inherit;font-size:12px}
+.copy{position:absolute;right:8px;top:8px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#cbd5e1;border-radius:6px;padding:3px 7px;font-size:10px;cursor:pointer}
+.copy:hover{background:rgba(255,255,255,.16)}
+table{width:100%;border-collapse:collapse;font-size:12px;margin:11px 0}
+th{background:#f8fafc;color:#475569;text-align:left;font-weight:650;padding:8px 9px;border:1px solid var(--line)}
+td{padding:8px 9px;border:1px solid #eef2f7;vertical-align:top}
+tbody tr:nth-child(even){background:#fbfdff}
+.table-wrap{overflow:auto;border-radius:8px}
+ul,ol{margin:7px 0 7px 21px;padding:0}
+li{margin:3px 0}
+code.inline{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:1px 4px;color:#334155}
+.kbd{display:inline-block;border:1px solid #cbd5e1;border-bottom-width:2px;border-radius:4px;padding:0 5px;background:#f8fafc;font-size:11px;color:#334155}
+figure{margin:16px 0}
+figure img{display:block;width:100%;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+figcaption{color:var(--muted2);font-size:10px;margin-top:7px;text-align:center}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.card{border:1px solid var(--line);border-radius:11px;padding:13px 14px;background:var(--soft)}
+.card b{font-size:12px}
+.card p{font-size:11px;color:var(--muted);margin:3px 0 0}
+.badge{display:inline-flex;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:700}
+.badge.ok{background:#dcfce7;color:#047857}.badge.warn{background:#fef3c7;color:#92400e}.badge.err{background:#ffe4e6;color:#9f1239}.badge.mut{background:#f1f5f9;color:#64748b}
+details{border:1px solid var(--line);border-radius:9px;padding:0 12px;margin:8px 0;background:#fbfdff}
+details summary{cursor:pointer;font-size:12px;font-weight:650;padding:9px 0;color:#334155}
+details[open]{padding-bottom:10px}
+details p,details ul{font-size:12px;color:#475569}
+.qa-q{font-weight:700;color:var(--ink2)}
+.footer{max-width:1320px;margin:0 auto;padding:0 28px 40px;color:var(--muted2);font-size:10px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:15px 0}
+.quick-grid .q{background:linear-gradient(180deg,#f8fbff,#eef5ff);border:1px solid #dbeafe;border-radius:12px;padding:14px}
+.quick-grid .q b{display:block;font-size:13px;color:#1e3a8a;margin-bottom:3px}
+.quick-grid .q span{font-size:11px;color:#64748b}
+.print-only{display:none}
+@media(max-width:980px){.layout{grid-template-columns:1fr}.toc{position:static}.flow{grid-template-columns:repeat(3,1fr)}.flow .node:not(:last-child):after{display:none}}
+@media(max-width:650px){section{padding:20px 16px}.grid2,.quick-grid{grid-template-columns:1fr}.hero-inner{padding:36px 16px 42px}.layout{padding:18px 16px 38px}.footer{padding:0 16px 28px}}
+@media print{
+  body{background:#fff;font-size:10px}.hero{background:#0f172a!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .toc,.actions,.copy{display:none!important}.layout{display:block;padding:0}.hero-inner{padding:24px 18px}
+  section{box-shadow:none;border-color:#ddd;break-inside:avoid;padding:16px;margin-bottom:12px}
+  pre{white-space:pre-wrap}details{border:0;padding:0}details>summary{display:none}details>*{display:block!important}
+  .print-only{display:block}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="topline">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" stroke="white" stroke-width="2.2" stroke-linecap="round"/><path d="M3 19h18" stroke="white" stroke-width="1.4" stroke-linecap="round" opacity=".65"/></svg></span>
+        <div>InsightFlow<small>Beginner's Guide</small></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="printBtn" type="button">打印 / 存为 PDF</button>
+        <button class="btn" id="openAll" type="button">展开全部排障</button>
+      </div>
+    </div>
+    <span class="eyebrow">ZERO-BASICS · LOCAL · OFFLINE</span>
+    <h1>零基础使用教程</h1>
+    <p class="lead">把每天的 Excel / CSV 放进一个文件夹，InsightFlow 会在 09:30 自动读取、清洗、分析，并生成一个双击就能看的 HTML 报告。你不需要写代码，只需要会复制命令、会放文件。</p>
+    <div class="chips">
+      <span class="chip">适用系统 <b>Windows 10 / 11</b></span>
+      <span class="chip">Python <b>3.10+</b></span>
+      <span class="chip">报告格式 <b>单文件 HTML</b></span>
+      <span class="chip">数据 <b>只在本地</b></span>
+      <span class="chip">版本 <b>v1.0.0</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="toc" aria-label="目录">
+    <h2>教程目录</h2>
+    <a href="#quick">0. 3 分钟跑通</a>
+    <a href="#principle">1. 原理介绍</a>
+    <a href="#prepare">2. 第一次准备</a>
+    <a href="#import">3. 导入数据</a>
+    <a class="sub" href="#config">3.1 数据源配置</a>
+    <a class="sub" href="#copy-files">3.2 放文件</a>
+    <a href="#data-spec">4. 数据规范</a>
+    <a class="sub" href="#minimum">4.1 最低可用数据</a>
+    <a class="sub" href="#bad-data">4.2 常见错误写法</a>
+    <a href="#run">5. 运行</a>
+    <a href="#output">6. 输出在哪</a>
+    <a class="sub" href="#report">6.1 报告怎么看</a>
+    <a class="sub" href="#logs">6.2 日志在哪</a>
+    <a href="#schedule">7. 定时任务</a>
+    <a href="#troubleshoot">8. 出错排障</a>
+    <a class="sub" href="#status">8.1 四种状态</a>
+    <a class="sub" href="#faq">8.2 常见问题</a>
+    <a class="sub" href="#ask">8.3 如何求助</a>
+    <a href="#glossary">9. 名词表与清单</a>
+  </aside>
+
+  <main>
+    <section id="quick">
+      <div class="tag">QUICK START</div>
+      <h2>0. 先看这里：3 分钟跑通</h2>
+      <p class="subtitle">第一次使用，按下面 5 步做；示例数据是合成的，不会接触你的真实业务。</p>
+      <div class="quick-grid">
+        <div class="q"><b>① 装 Python</b><span>3.10 或更高版本，安装时勾选“Add python.exe to PATH”。</span></div>
+        <div class="q"><b>② 开终端</b><span>在 insightflow 文件夹空白处右键，选择“在终端中打开”。</span></div>
+        <div class="q"><b>③ 装依赖</b><span>复制下面命令，回车，等待完成。</span></div>
+      </div>
+      <pre><button class="copy" type="button">复制</button><code>cd C:\你的路径\insightflow
+python --version
+python -m pip install -r requirements.txt</code></pre>
+      <div class="steps">
+        <div class="step"><span class="num">4</span><div><b>跑一次演示</b><p>会生成演示数据、执行完整流水线，并输出报告。</p></div></div>
+        <div class="step"><span class="num">5</span><div><b>打开报告</b><p>双击 <code class="inline">output\latest.html</code>，或执行下面命令。</p></div></div>
+      </div>
+      <pre><button class="copy" type="button">复制</button><code>.\run.ps1 demo --date 2026-11-07
+start output\latest.html</code></pre>
+      <div class="warn"><b>如果 PowerShell 提示“禁止运行脚本”：</b>执行一次下面的命令，只对当前窗口生效；或者改用 <code class="inline">run.bat demo --date 2026-11-07</code>。</div>
+      <pre><button class="copy" type="button">复制</button><code>Set-ExecutionPolicy -Scope Process Bypass</code></pre>
+      <div class="tip"><b>你只需要记住三件事：</b>把文件放进数据源文件夹 → 每天 09:30 自动跑 → 打开 <code class="inline">output\latest.html</code>。</div>
+    </section>
+
+    <section id="principle">
+      <div class="tag">HOW IT WORKS</div>
+      <h2>1. 原理介绍：它到底做了什么</h2>
+      <p class="subtitle">你可以把它理解成一条“数据流水线”，每一步都有记录，出错也不会把整批数据弄坏。</p>
+      <div class="flow" aria-label="数据流水线">
+        <div class="node"><b>扫描</b><small>找 Excel/CSV</small></div>
+        <div class="node"><b>识别</b><small>找日期/指标/维度</small></div>
+        <div class="node"><b>筛选</b><small>只取前一日</small></div>
+        <div class="node"><b>清洗</b><small>去重/补缺/标记异常</small></div>
+        <div class="node"><b>分析</b><small>算指标/画图</small></div>
+        <div class="node"><b>报告</b><small>单文件 HTML</small></div>
+      </div>
+      <h3>三个最重要的概念</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:130px">概念</th><th>什么意思</th><th>例子</th></tr></thead>
+        <tbody>
+          <tr><td><b>报告日</b></td><td>这次报告分析哪一天。默认是“运行日的前一天”。</td><td>11 月 8 日 09:30 运行 → 分析 <b>11 月 7 日</b></td></tr>
+          <tr><td><b>基准日</b></td><td>用来做环比的前一天；没有基准就不显示环比，不会硬造。</td><td>报告日 11-07 → 基准日 <b>11-06</b></td></tr>
+          <tr><td><b>数据源</b></td><td>你指定的本地文件夹。工具只读，不会修改原文件。</td><td><code class="inline">D:\每日数据\销售导出</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="grid2">
+        <div class="card"><b>它会自动做</b><p>找最新一天的数据、识别字段、清洗、算 KPI、做结构/趋势/分布/相关性分析、生成图表和文字结论。</p></div>
+        <div class="card"><b>它不会做</b><p>不会上传数据、不会改你的源文件、不会猜缺失日期、不会把“2026-11”月数据当成日数据，也不会替代你的业务判断。</p></div>
+      </div>
+      <div class="note"><b>为什么强调“前一日”？</b>每天 09:30 跑的时候，昨天的数据通常已经完整落库；如果当天数据还在变，报告就会不稳定。要分析别的日期，用 <code class="inline">--date YYYY-MM-DD</code> 指定。</div>
+    </section>
+
+    <section id="prepare">
+      <div class="tag">PREPARE</div>
+      <h2>2. 第一次准备</h2>
+      <p class="subtitle">只需要做一次。以后每天就是放文件、看报告。</p>
+      <h3>2.1 安装 Python</h3>
+      <ol>
+        <li>打开 <code class="inline">python.org</code>，下载 Python 3.10 或更高版本。</li>
+        <li>安装时勾选 <b>Add python.exe to PATH</b>。</li>
+        <li>打开 PowerShell，输入 <code class="inline">python --version</code>，能看到版本号就成功。</li>
+      </ol>
+      <h3>2.2 安装依赖</h3>
+      <p>在 <code class="inline">insightflow</code> 文件夹里打开终端，执行：</p>
+      <pre><button class="copy" type="button">复制</button><code>python -m pip install -r requirements.txt</code></pre>
+      <p>看到 <code class="inline">Successfully installed ...</code> 即可。第一次会下载 pandas 等包，需要几分钟。</p>
+      <div class="tip"><b>推荐在项目文件夹里打开终端：</b>Windows 11 右键空白处 →“在终端中打开”；Windows 10 按住 <span class="kbd">Shift</span> 右键 →“在此处打开 PowerShell 窗口”。</div>
+      <h3>2.3 认识文件夹</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>文件夹</th><th>用途</th><th>你要不要动</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">config\config.json</code></td><td>数据源、输出、定时时间等配置</td><td>要改数据源时动它</td></tr>
+          <tr><td><code class="inline">examples\raw\</code></td><td>演示数据源（默认）</td><td>第一次体验不用动</td></tr>
+          <tr><td><code class="inline">output\</code></td><td>报告和 JSON/CSV 产物</td><td>看报告时打开</td></tr>
+          <tr><td><code class="inline">logs\</code></td><td>每次运行日志</td><td>排障时看</td></tr>
+          <tr><td><code class="inline">state\</code></td><td>锁、幂等索引、任务状态</td><td><b>不要手动改</b></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="import">
+      <div class="tag">IMPORT DATA</div>
+      <h2>3. 导入数据</h2>
+      <p class="subtitle">不用把文件“上传”到任何地方；只要让工具知道你的文件夹在哪。</p>
+
+      <h3 id="config">3.1 配置数据源</h3>
+      <ol>
+        <li>用记事本打开 <code class="inline">config\config.json</code>。</li>
+        <li>找到 <code class="inline">"source_dir"</code>，改成你的数据文件夹。</li>
+        <li>保存（建议 UTF-8），重新运行。</li>
+      </ol>
+      <pre><button class="copy" type="button">复制</button><code>{
+  "source_dir": "D:/每日数据/销售导出",
+  "output_dir": "output",
+  "schedule_time": "09:30",
+  "recursive_scan": true
+}</code></pre>
+      <div class="warn"><b>Windows 路径写法：</b>推荐用正斜杠 <code class="inline">D:/每日数据/销售导出</code>；如果用反斜杠，JSON 里要写成双反斜杠 <code class="inline">D:\\每日数据\\销售导出</code>。路径有空格也可以，但要用引号包住。</div>
+      <p><code class="inline">recursive_scan</code> 为 <code class="inline">true</code> 时会扫描子文件夹；如果只想扫当前文件夹，改成 <code class="inline">false</code>。</p>
+
+      <h3 id="copy-files">3.2 放文件</h3>
+      <ul>
+        <li>支持 <b>.xlsx</b>、<b>.xls</b>、<b>.csv</b>；可以一次放多个文件，也可以按天累积。</li>
+        <li>CSV 的 UTF-8、UTF-8 BOM、GBK、GB18030 会自动识别，通常不需要手动转编码；<b>.xls</b> 依赖 <code class="inline">xlrd</code>，安装依赖时已包含。</li>
+        <li>文件名没有强制要求，例如 <code class="inline">销售明细_2026-11-07.xlsx</code>、<code class="inline">导出.csv</code> 都可以。</li>
+        <li>运行前请<b>关闭 Excel/WPS</b>，避免文件被占用。</li>
+        <li>一个工作簿可以有多个 Sheet；没有日期的封面/说明 Sheet 会自动跳过，但最好只保留明细 Sheet。</li>
+        <li>默认单文件上限 50 MB、20 万行；特别大的文件建议先拆分。</li>
+      </ul>
+      <div class="tip"><b>先预览再正式跑：</b><code class="inline">.\run.ps1 scan --date 2026-11-07</code> 会显示每个文件命中了多少行、用了哪一列日期，不写报告，适合先检查数据有没有放对。</div>
+    </section>
+
+    <section id="data-spec">
+      <div class="tag">DATA SPEC</div>
+      <h2>4. 数据规范</h2>
+      <p class="subtitle">不需要把数据做得完美，但下面这些会直接影响识别结果。满足“最低可用”就能出报告。</p>
+
+      <h3 id="minimum">4.1 最低可用数据</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:130px">内容</th><th style="width:90px">是否必须</th><th>要求</th></tr></thead>
+        <tbody>
+          <tr><td><b>日期列</b></td><td><span class="badge err">必须</span></td><td>能解析到“天”，且包含报告日。例如 <code class="inline">订单日期</code>。</td></tr>
+          <tr><td><b>指标列</b></td><td><span class="badge warn">强烈建议</span></td><td>数值列，例如销售额、订单量、客户数、成本。没有指标时只能做频次和质量分析。</td></tr>
+          <tr><td><b>维度列</b></td><td><span class="badge warn">强烈建议</span></td><td>分类列，例如区域、品类、渠道。没有维度时只能看总体 KPI。</td></tr>
+          <tr><td><b>ID 列</b></td><td><span class="badge mut">可选</span></td><td>订单号、客户ID；用于追溯和去重辅助。</td></tr>
+        </tbody>
+      </table></div>
+
+      <h4>最简单的正确示例</h4>
+      <pre><button class="copy" type="button">复制</button><code>订单日期,区域,品类,渠道,销售额,订单量,成本
+2026-11-07,华东,手机数码,线上,12800.50,3,9000
+2026-11-07,华南,家用电器,线下,7600.00,2,5100
+2026-11-07,华北,服饰鞋包,线上,980.00,5,520</code></pre>
+      <p>这一张表已经足够生成：KPI、品类/区域排名、占比、分布、相关性、数据质量等分析。</p>
+
+      <h3>4.2 日期怎么写</h3>
+      <p>以下写法都能识别：</p>
+      <div class="grid2">
+        <div class="card"><b>推荐</b><p><code class="inline">2026-11-07</code>、<code class="inline">2026/11/7</code>、<code class="inline">2026.11.07</code>、<code class="inline">2026年11月7日</code>、<code class="inline">20261107</code>；Excel 日期格式也可以。</p></div>
+        <div class="card"><b>不要用</b><p><code class="inline">2026-11</code>（只有月份）、<code class="inline">11/7</code>（缺年份）、<code class="inline">上周</code>、<code class="inline">昨天</code>。日粒度分析必须有完整日期。</p></div>
+      </div>
+      <p>列名建议使用：<code class="inline">日期</code>、<code class="inline">订单日期</code>、<code class="inline">业务日期</code>、<code class="inline">交易日期</code>、<code class="inline">统计日期</code>、<code class="inline">date</code>、<code class="inline">order_date</code>。其他名字也可能被识别，但用这些最稳。</p>
+      <div class="warn"><b>日月歧义：</b><code class="inline">03/04/2026</code> 默认按“日/月/年”解析为 <b>2026-03-04</b>。如果源系统是美式“月/日/年”，请先转成 <code class="inline">YYYY-MM-DD</code>，避免数据归错期。</div>
+
+      <h3>4.3 指标怎么写</h3>
+      <ul>
+        <li>指标单元格必须是<b>数字</b>，不要写“约 1 万”“三单”“待确认”。</li>
+        <li>支持千分位、货币符号和单位：<code class="inline">1,234.50</code>、<code class="inline">¥1,234.50</code>、<code class="inline">1.2万</code>、<code class="inline">3.5亿</code>、<code class="inline">12.5%</code>。</li>
+        <li>推荐列名：<code class="inline">销售额</code>、<code class="inline">销售金额</code>、<code class="inline">营收</code>、<code class="inline">收入</code>、<code class="inline">订单量</code>、<code class="inline">订单数</code>、<code class="inline">客户数</code>、<code class="inline">新增客户数</code>、<code class="inline">成本</code>、<code class="inline">利润</code>。</li>
+        <li>单位可以写在表头，例如 <code class="inline">销售额(万元)</code>；这时单元格写 <code class="inline">12.5</code> 就表示 12.5 万，工具会自动换算成元。</li>
+        <li><b>毛利率、利润率、占比、平均</b>这类“不可相加”的列不会被当成金额求和，避免把百分比加成一个巨大的数。</li>
+      </ul>
+      <div class="warn"><b>不要“双重单位”：</b>表头已经写了 <code class="inline">(万元)</code>，单元格就不要再写 <code class="inline">12.5万</code>；两者只选一种，否则可能重复换算。</div>
+
+      <h3>4.4 维度怎么写</h3>
+      <ul>
+        <li>推荐列名：<code class="inline">区域</code>、<code class="inline">品类</code>、<code class="inline">渠道</code>、<code class="inline">门店</code>、<code class="inline">商品</code>、<code class="inline">品牌</code>、<code class="inline">销售员</code>、<code class="inline">省份</code>、<code class="inline">城市</code>。</li>
+        <li>一个维度最好有 <b>2–50 个</b>不同取值；几百上千个 SKU 不适合直接做占比图，工具会优先选择更适合的维度。</li>
+        <li>同一列里不要混用“华东”“华东区”“东部”这类口径；工具会尝试归一，但统一写法最稳。</li>
+      </ul>
+
+      <h3 id="bad-data">4.5 常见错误写法（重点）</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:230px">错误</th><th>为什么不行</th><th>怎么改</th></tr></thead>
+        <tbody>
+          <tr><td>明细表里夹着“合计/小计”行</td><td>会被当成一条正常记录，金额和订单量被重复计算</td><td>删除合计行，或把合计放到单独 Sheet</td></tr>
+          <tr><td>两行表头 / 合并单元格</td><td>工具只能选一行作为表头，合并单元格会产生空列名</td><td>改成一行表头，取消合并，补全每个列名</td></tr>
+          <tr><td>标题行在表头上面</td><td>可能被误判成表头；工具会扫描前 20 行，但不保证</td><td>删除标题行，让第一行就是列名</td></tr>
+          <tr><td>日期是“2026-11”</td><td>只有月份，无法按天筛选</td><td>导出日粒度日期，或补成具体某天</td></tr>
+          <tr><td>金额是文本“约 1 万”</td><td>无法可靠转成数字，可能被填 0 或缺失</td><td>改成 <code class="inline">10000</code></td></tr>
+          <tr><td>密码保护 / 损坏的文件</td><td>读取失败，但不会影响其他文件</td><td>解除密码，用 Excel 另存为正常 xlsx</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>4.6 多文件、多 Sheet 会怎么处理</h3>
+      <ul>
+        <li>所有命中报告日的表会合并分析；不同文件名不影响。</li>
+        <li>列名不同但语义相同（销售额 / 销售金额 / revenue）会尝试对齐。</li>
+        <li>完全重复的行会去重，保留第一次出现；只是“看起来像”的重复不会随便删。</li>
+        <li>没有日期列的表（封面、说明、汇总）会跳过；如果你确认某张表有数据但没被读取，先看 <code class="inline">scan</code> 输出。</li>
+      </ul>
+      <div class="danger"><b>隐私提醒：</b>报告会展示源文件名、Top 10 明细和异常值明细。对外分享前，请先脱敏客户名、订单号、手机号等敏感字段。</div>
+    </section>
+
+    <section id="run">
+      <div class="tag">RUN</div>
+      <h2>5. 运行</h2>
+      <p class="subtitle">日常只需要一条命令；所有命令都在 <code class="inline">insightflow</code> 文件夹里执行。</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:300px">你想做什么</th><th>命令</th></tr></thead>
+        <tbody>
+          <tr><td>分析昨天（默认）</td><td><code class="inline">.\run.ps1 run</code></td></tr>
+          <tr><td>分析指定日期</td><td><code class="inline">.\run.ps1 run --date 2026-11-07</code></td></tr>
+          <tr><td>强制重算（同一天、同一批文件）</td><td><code class="inline">.\run.ps1 run --date 2026-11-07 --force</code></td></tr>
+          <tr><td>临时换数据源</td><td><code class="inline">.\run.ps1 run --date 2026-11-07 --source "D:\临时导出"</code></td></tr>
+          <tr><td>只预览，不生成报告</td><td><code class="inline">.\run.ps1 scan --date 2026-11-07</code></td></tr>
+          <tr><td>生成演示数据并跑</td><td><code class="inline">.\run.ps1 demo --date 2026-11-07</code></td></tr>
+          <tr><td>看最近运行记录</td><td><code class="inline">.\run.ps1 logs --limit 10</code></td></tr>
+        </tbody>
+      </table></div>
+      <div class="note"><b>为什么有时会“跳过”？</b>如果源文件没有变化，工具会通过数据指纹判断“已经生成过”，状态为 <code class="inline">skipped</code>，不会重复写一份一样的报告。确实要重算时加 <code class="inline">--force</code>。</div>
+      <h3>运行结果怎么读</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>状态</th><th>含义</th><th>你要做什么</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge ok">success</span></td><td>成功生成报告</td><td>打开 <code class="inline">output\latest.html</code></td></tr>
+          <tr><td><span class="badge warn">no_data</span></td><td>文件读到了，但没有目标日的数据</td><td>检查日期列、目标日、文件是否放对</td></tr>
+          <tr><td><span class="badge mut">skipped</span></td><td>数据没变化，复用已有报告；或另一个任务正在跑</td><td>看原因；要重算加 <code class="inline">--force</code></td></tr>
+          <tr><td><span class="badge err">failed</span></td><td>没有成功读取任何表 / 清洗后为空 / 报告渲染失败</td><td>看 <code class="inline">logs\latest_run.json</code> 的 <code class="inline">failure_reason</code></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="output">
+      <div class="tag">OUTPUT</div>
+      <h2>6. 输出在哪</h2>
+      <p class="subtitle">所有产物都在项目文件夹里；不需要服务器，也不需要联网。</p>
+      <h3>6.1 报告文件</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:360px">路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">output\latest.html</code></td><td><b>永远是最新报告</b>，日常直接双击这个</td></tr>
+          <tr><td><code class="inline">output\2026-11-07\InsightFlow_2026-11-07_&lt;run_id&gt;.html</code></td><td>按天归档的历史报告，可保留、打印、发送</td></tr>
+          <tr><td><code class="inline">output\2026-11-07\analysis_plan.json</code></td><td>本次分析计划：主指标、主维度、启用了哪些图、为什么跳过</td></tr>
+          <tr><td><code class="inline">output\2026-11-07\metrics.json</code></td><td>KPI、总量、基准、相关性、质量分等机器可读指标</td></tr>
+          <tr><td><code class="inline">output\2026-11-07\cleaned_data.csv</code></td><td>清洗后的明细，可用 Excel 打开复核</td></tr>
+          <tr><td><code class="inline">output\2026-11-07\run_record.json</code></td><td>本次运行记录摘要</td></tr>
+        </tbody>
+      </table></div>
+      <figure>
+        <img src="images/report-overview.png" alt="InsightFlow 报告首屏截图">
+        <figcaption>报告首屏：报告日、KPI、结论摘要、结构与图表。所有图表下方都有可展开的数据表。</figcaption>
+      </figure>
+      <h3 id="report">报告怎么读</h3>
+      <ol>
+        <li><b>结论摘要</b>：先看 3–6 条带数字的结论；“事实”和“推断”分开标注。</li>
+        <li><b>KPI</b>：本期规模、订单、客单价、毛利率、客户数，以及较前一日变化。</li>
+        <li><b>结构 / 趋势 / 分布</b>：排名、占比、Pareto、热力图、分时走势、日环比、直方图、相关性。</li>
+        <li><b>分析计划</b>：为什么选这个指标/维度，哪些分析被跳过。</li>
+        <li><b>数据质量</b>：缺失、重复、异常值、解析质量、兼容性提示。</li>
+        <li><b>数据血缘与附录</b>：源文件、字段映射、Top 10 明细、异常清单、运行步骤。</li>
+      </ol>
+      <p>报告右上角可以“打印 / 导出 PDF”；每张图右上角可以“下载 PNG”。报告是单文件，发给别人时只需发这个 HTML。</p>
+      <div class="warn"><b>图表空白？</b>先确认浏览器启用了 JavaScript，推荐 Edge / Chrome。即使图表不显示，每张图下方的数据表仍然可读，可用来核对数字。</div>
+
+      <h3 id="logs">6.2 日志在哪</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:360px">路径</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">logs\latest_run.json</code></td><td>最近一次运行的完整记录；排障先看这个</td></tr>
+          <tr><td><code class="inline">logs\runs\&lt;run_id&gt;.json</code></td><td>每次运行一个快照</td></tr>
+          <tr><td><code class="inline">logs\runs.jsonl</code></td><td>每次触发追加一行，适合检索历史</td></tr>
+          <tr><td><code class="inline">logs\insightflow.log</code></td><td>轮转文本日志，记录读取、警告、错误堆栈</td></tr>
+          <tr><td><code class="inline">logs\scheduler_console.log</code></td><td>定时任务入口的执行摘要（UTF-8）</td></tr>
+          <tr><td><code class="inline">state\index.json</code></td><td>幂等索引，<b>不要手动改</b></td></tr>
+        </tbody>
+      </table></div>
+      <p>最常用的查看方式：<code class="inline">.\run.ps1 logs --limit 10</code>。如果要看某次失败原因，打开 <code class="inline">logs\latest_run.json</code>，搜索 <code class="inline">failure_reason</code> 和 <code class="inline">warnings</code>。</p>
+    </section>
+
+    <section id="schedule">
+      <div class="tag">SCHEDULE</div>
+      <h2>7. 定时任务</h2>
+      <p class="subtitle">定时任务的职责只有一句话：每天 09:30 执行一次 <code class="inline">run --trigger scheduled</code>。</p>
+      <div class="tip"><b>本机状态：</b>当前环境已注册 <code class="inline">InsightFlow_Daily_0930</code>，下次运行 2026-11-09 09:30，最近一次结果 <code class="inline">0</code>（成功）。换电脑或移动项目文件夹后，需要重新安装。</div>
+      <h3>7.1 查看 / 安装 / 卸载</h3>
+      <pre><button class="copy" type="button">复制</button><code># 查看状态
+.\run.ps1 schedule status
+
+# 安装（默认 09:30）
+.\run.ps1 schedule install
+
+# 改时间（例如 08:45），会覆盖同名任务
+.\run.ps1 schedule install --time 08:45
+
+# 只预览任务 XML，不写入系统
+.\run.ps1 schedule install --dry-run
+
+# 卸载
+.\run.ps1 schedule uninstall</code></pre>
+      <p>也可以在 Windows 的“任务计划程序”（<code class="inline">taskschd.msc</code>）→“任务计划程序库”里看到 <code class="inline">InsightFlow_Daily_0930</code>。</p>
+
+      <h3>7.2 定时任务的 4 个前提</h3>
+      <ol>
+        <li>电脑在 09:30 处于开机、已登录状态（任务是当前用户交互式运行）。</li>
+        <li>数据源文件夹在 09:30 前已经有“前一日”的完整数据。</li>
+        <li>项目文件夹没有被移动；移动后要重新执行 <code class="inline">schedule install</code>。</li>
+        <li>没有另一个 InsightFlow 正在运行；文件锁会阻止并发。</li>
+      </ol>
+      <div class="note"><b>电脑休眠错过 09:30？</b>Windows 任务设置了 <code class="inline">StartWhenAvailable</code>，恢复后可能补跑；内置 daemon 也有补跑窗口。具体是否补跑取决于系统电源策略，最稳的做法仍是保持 09:30 前开机。</div>
+      <h3>7.3 没有 Windows 计划任务权限</h3>
+      <p>可以改用内置 daemon（需要保持终端窗口运行）：</p>
+      <pre><button class="copy" type="button">复制</button><code>.\run.ps1 schedule daemon</code></pre>
+      <p>它会在每天 09:30 触发；休眠恢复后在宽限期内补跑，失败后 5 分钟重试。按 <span class="kbd">Ctrl</span>+<span class="kbd">C</span> 停止。</p>
+    </section>
+
+    <section id="troubleshoot">
+      <div class="tag">TROUBLESHOOTING</div>
+      <h2>8. 出错排障</h2>
+      <p class="subtitle">先不要改数据。按“状态 → 日志 → 预览 → 修复”的顺序，绝大多数问题 2 分钟能定位。</p>
+
+      <h3 id="status">8.1 先看四种状态</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>状态</th><th>大概率原因</th><th>先做什么</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge ok">success</span></td><td>一切正常</td><td>打开 <code class="inline">output\latest.html</code></td></tr>
+          <tr><td><span class="badge warn">no_data</span></td><td>没有目标日期的数据；日期列没识别；文件没放对</td><td><code class="inline">.\run.ps1 scan --date 2026-11-07</code></td></tr>
+          <tr><td><span class="badge mut">skipped</span></td><td>数据指纹没变；或另一个任务正在跑</td><td>看原因；要重算加 <code class="inline">--force</code></td></tr>
+          <tr><td><span class="badge err">failed</span></td><td>文件全坏/为空；清洗后为空；报告渲染失败</td><td>看 <code class="inline">logs\latest_run.json</code> 的 <code class="inline">failure_reason</code></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>8.2 排障四步法</h3>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><div><b>看命令输出</b><p>状态、目标日期、读取文件数、失败原因都在最后几行。</p></div></div>
+        <div class="step"><span class="num">2</span><div><b>看 latest_run.json</b><p>搜索 <code class="inline">failure_reason</code>、<code class="inline">warnings</code>、<code class="inline">files[].status</code>。</p></div></div>
+        <div class="step"><span class="num">3</span><div><b>跑 scan 预览</b><p>确认文件被读到、目标日命中行数、日期列是否正确。</p></div></div>
+        <div class="step"><span class="num">4</span><div><b>只改一个变量</b><p>先改日期/列名/文件，再重跑；不要一次改很多地方。</p></div></div>
+      </div>
+
+      <h3 id="faq">8.3 常见问题</h3>
+
+      <details><summary>Q1：输入 <code class="inline">python</code> 提示“不是内部或外部命令”</summary>
+        <p>Python 没装好，或安装时没勾选 PATH。重新安装并勾选 <b>Add python.exe to PATH</b>；安装后关闭并重新打开终端。也可以试 <code class="inline">py --version</code>。</p>
+      </details>
+      <details><summary>Q2：<code class="inline">.\run.ps1</code> 提示“禁止运行脚本”</summary>
+        <p>执行 <code class="inline">Set-ExecutionPolicy -Scope Process Bypass</code>，只对当前 PowerShell 窗口生效。或者直接用 <code class="inline">run.bat run --date 2026-11-07</code>。</p>
+      </details>
+      <details><summary>Q3：提示 <code class="inline">ModuleNotFoundError: No module named pandas</code></summary>
+        <p>依赖没装。确认在 <code class="inline">insightflow</code> 文件夹里执行 <code class="inline">python -m pip install -r requirements.txt</code>。如果你用了虚拟环境，先激活虚拟环境。</p>
+      </details>
+      <details><summary>Q4：状态是 <code class="inline">no_data</code>，但文件里明明有数据</summary>
+        <p>按顺序检查：① 报告日是不是“运行日的昨天”；② 日期列是不是真正的日粒度（不是“2026-11”）；③ 日期是不是在目标日；④ 文件是否放在 <code class="inline">source_dir</code>；⑤ 文件是否被 Excel 占用。<br>用 <code class="inline">.\run.ps1 scan --date 你的日期</code> 看“目标”列是否大于 0。</p>
+      </details>
+      <details><summary>Q5：<code class="inline">failed</code>，原因“没有成功读取任何数据表”</summary>
+        <p>所有文件都为空、损坏、加密或格式不对。先单独用 Excel 打开文件；能打开就“另存为 .xlsx”；不能打开就重新导出。空的 CSV、0 字节文件、改了后缀的假 Excel 都会失败。</p>
+      </details>
+      <details><summary>Q6：提示找不到日期列 / 字段识别不对</summary>
+        <p>把日期列改名为 <code class="inline">日期</code> 或 <code class="inline">订单日期</code>；确保第一行是表头、没有合并单元格、没有两行表头；日期值要是完整日期。改完先跑 <code class="inline">scan</code> 看“日期列”和“目标行”。</p>
+      </details>
+      <details><summary>Q7：数字列被识别成文本 / 缺失很多</summary>
+        <p>检查单元格是不是“文本格式的数字”，或写了“约 1 万”“三单”。改成纯数字；用 Excel 的“分列/转换为数字”处理后再导出。清洗会用中位数填补缺失，但填得太多会影响结论。</p>
+      </details>
+      <details><summary>Q8：金额差了 10000 倍</summary>
+        <p>检查表头单位。<code class="inline">销售额(万元)</code> 表示单元格是万元，工具会乘 10000；如果单元格又写 <code class="inline">12.5万</code>，就重复了。两者只保留一种。</p>
+      </details>
+      <details><summary>Q9：图表很少，或没有某个图</summary>
+        <p>不是所有数据都适合所有图。看报告“分析计划”的“跳过原因”：可能样本太少、主维度分组不足 4 个、没有前一日基准、没有时间字段，或图表数量达到上限 8 个。数据量足够时会自动增加。</p>
+      </details>
+      <details><summary>Q10：报告打不开 / 图表空白</summary>
+        <p>确认文件完整、大小约 1 MB 以上；用 Edge 或 Chrome 打开；启用 JavaScript。图表空白时，展开每张图下方的“查看图表数据”，表格仍然可用。不要把 HTML 当文本编辑器打开。</p>
+      </details>
+      <details><summary>Q11：定时任务没有在 09:30 跑</summary>
+        <p>执行 <code class="inline">.\run.ps1 schedule status</code>，确认任务存在且“Next Run Time”正确；确认电脑开机且用户已登录；确认项目文件夹没被移动；看 <code class="inline">logs\scheduler_console.log</code> 和 <code class="inline">logs\insightflow.log</code>。移动过文件夹就重新 <code class="inline">schedule install</code>。</p>
+      </details>
+      <details><summary>Q12：任务跑了，但报告没更新</summary>
+        <p>看状态是不是 <code class="inline">skipped</code>。如果源文件内容/大小/修改时间没有变化，工具会复用报告；确实要重算就执行 <code class="inline">.\run.ps1 run --date 你的日期 --force</code>。</p>
+      </details>
+      <details><summary>Q13：提示“另一个运行正在执行”</summary>
+        <p>说明有另一次运行持有 <code class="inline">state\.pipeline.lock</code>。等它结束；如果确认没有进程在跑（例如电脑异常关机），等 150 分钟自动过期，或手动删除该锁文件后再运行。</p>
+      </details>
+      <details><summary>Q14：数据重复 / 金额翻倍</summary>
+        <p>先检查明细表里是否混入“合计/小计”行；再检查是否同时放了“明细文件”和“汇总文件”。工具只去重“完全相同的行”，不会把业务上相似的行随便删掉。</p>
+      </details>
+      <details><summary>Q15：Excel 文件被占用 / 读取失败</summary>
+        <p>关闭 Excel/WPS 再跑；确认文件不在 OneDrive 的“仅在线”状态；确认没有密码保护。网络盘/同步盘写入过程中也可能读不到，等同步完成。</p>
+      </details>
+
+      <h3 id="ask">8.4 要求助时，提供这 5 样</h3>
+      <ol>
+        <li>运行编号 <code class="inline">run_id</code>；</li>
+        <li>目标日期 <code class="inline">target_date</code>；</li>
+        <li>状态与 <code class="inline">failure_reason</code>；</li>
+        <li><code class="inline">logs\latest_run.json</code> 或 <code class="inline">logs\runs\&lt;run_id&gt;.json</code>；</li>
+        <li>源文件前 3 行截图（脱敏）+ 文件类型/编码。</li>
+      </ol>
+      <div class="danger"><b>不要直接发送真实客户明细。</b>可以先复制一份，把姓名、手机号、订单号替换成假数据，只保留表头和结构。</div>
+
+      <h3>8.5 不要做这些事</h3>
+      <ul>
+        <li>不要手动改 <code class="inline">state\index.json</code>；要重算用 <code class="inline">--force</code>。</li>
+        <li>不要在运行中删除 <code class="inline">.pipeline.lock</code>；等运行结束或确认进程已退出。</li>
+        <li>不要在明细表里保留合计行、合并单元格、两行表头。</li>
+        <li>不要把“2026-11”这种月数据当日报数据。</li>
+        <li>不要把报告 HTML 当源数据再放回数据源目录。</li>
+      </ul>
+    </section>
+
+    <section id="glossary">
+      <div class="tag">REFERENCE</div>
+      <h2>9. 名词表与每日清单</h2>
+      <h3>9.1 名词表</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th style="width:140px">名词</th><th>解释</th></tr></thead>
+        <tbody>
+          <tr><td>数据源</td><td>你指定的本地文件夹，里面放 Excel/CSV。</td></tr>
+          <tr><td>字段</td><td>表格的一列，例如“销售额”。</td></tr>
+          <tr><td>指标</td><td>可求和的数值列，例如销售额、订单量、成本。</td></tr>
+          <tr><td>维度</td><td>用于分组的分类列，例如区域、品类、渠道。</td></tr>
+          <tr><td>报告日</td><td>本次分析的目标日期，默认是运行前一天。</td></tr>
+          <tr><td>基准日</td><td>报告日的前一天，用于环比；没有就不显示。</td></tr>
+          <tr><td>清洗</td><td>去重、补缺失、统一日期/文本、标记异常值。</td></tr>
+          <tr><td>数据指纹</td><td>根据文件路径/大小/修改时间算出的标识，用来判断“数据有没有变”。</td></tr>
+          <tr><td>幂等</td><td>同一批数据重复跑，不会重复生成多份相同报告。</td></tr>
+          <tr><td>质量分</td><td>0–100 的启发式评分，综合完整度、重复、异常、解析质量；不是统计认证。</td></tr>
+        </tbody>
+      </table></div>
+      <h3>9.2 每天 5 步清单</h3>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><div><b>放文件</b><p>把前一日导出文件放进 <code class="inline">source_dir</code>，关闭 Excel。</p></div></div>
+        <div class="step"><span class="num">2</span><div><b>等 09:30</b><p>定时任务自动跑；或手动执行 <code class="inline">.\run.ps1 run</code>。</p></div></div>
+        <div class="step"><span class="num">3</span><div><b>看状态</b><p>确认是 <code class="inline">success</code>；如果是 <code class="inline">no_data</code>，先跑 <code class="inline">scan</code>。</p></div></div>
+        <div class="step"><span class="num">4</span><div><b>看报告</b><p>打开 <code class="inline">output\latest.html</code>，先看结论和质量提示。</p></div></div>
+        <div class="step"><span class="num">5</span><div><b>归档/分享</b><p>需要时打印 PDF 或发送 HTML；敏感数据先脱敏。</p></div></div>
+      </div>
+      <h3>9.3 一句话总结</h3>
+      <div class="tip"><b>把“前一日、日粒度、一行一条明细、日期列正确”的数据放进数据源文件夹；09:30 后打开 <code class="inline">output\latest.html</code>。</b>遇到问题先看状态和 <code class="inline">logs\latest_run.json</code>。</div>
+    </section>
+  </main>
+</div>
+
+<footer class="footer">
+  <div>InsightFlow v1.0.0 · 零基础使用教程 · 本地离线运行</div>
+  <div>示例数据为合成数据 · 报告与源文件默认不离开本机</div>
+</footer>
+
+<script>
+"use strict";
+document.getElementById("printBtn").addEventListener("click", function(){ window.print(); });
+document.getElementById("openAll").addEventListener("click", function(){
+  var all = document.querySelectorAll("details");
+  var shouldOpen = Array.prototype.some.call(all, function(d){ return !d.open; });
+  Array.prototype.forEach.call(all, function(d){ d.open = shouldOpen; });
+  this.textContent = shouldOpen ? "收起全部排障" : "展开全部排障";
+});
+document.querySelectorAll("pre").forEach(function(pre){
+  var button = pre.querySelector(".copy");
+  if(!button) return;
+  button.addEventListener("click", function(){
+    var code = pre.querySelector("code");
+    var text = code ? code.innerText : pre.innerText;
+    var done = function(){ button.textContent = "已复制"; setTimeout(function(){ button.textContent = "复制"; }, 1200); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(function(){ fallback(text, done); });
+    }else{
+      fallback(text, done);
+    }
+  });
+});
+function fallback(text, done){
+  var area = document.createElement("textarea");
+  area.value = text; area.style.position = "fixed"; area.style.opacity = "0";
+  document.body.appendChild(area); area.select();
+  try { document.execCommand("copy"); done(); } catch(e) { }
+  document.body.removeChild(area);
+}
+var links = Array.prototype.slice.call(document.querySelectorAll(".toc a"));
+var sections = links.map(function(link){ return document.querySelector(link.getAttribute("href")); }).filter(Boolean);
+if("IntersectionObserver" in window){
+  var observer = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting) return;
+      links.forEach(function(link){
+        link.classList.toggle("active", link.getAttribute("href") === "#" + entry.target.id);
+      });
+    });
+  }, {rootMargin:"-15% 0px -70% 0px"});
+  sections.forEach(function(section){ observer.observe(section); });
+}
+</script>
+</body>
+</html>

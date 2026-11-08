@@ -1,0 +1,265 @@
+"""Configuration loading and path resolution.
+
+The application is deliberately configured with JSON instead of YAML so the
+repository has no hidden parser dependency.  Relative paths are always
+resolved against the project root, never against the caller's current working
+directory; that makes Task Scheduler runs reproducible.
+"""
+
+from __future__ import annotations
+
+import copy
+import os
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from pathlib import Path
+from typing import Any
+
+from .utils import ensure_dir, read_json
+
+APP_VERSION = "1.0.0"
+
+_DEFAULTS: dict[str, Any] = {
+    "app_name": "InsightFlow",
+    "version": APP_VERSION,
+    "timezone": "Asia/Shanghai",
+    "source_dir": "examples/raw",
+    "output_dir": "output",
+    "log_dir": "logs",
+    "state_dir": "state",
+    "schedule_time": "09:30",
+    "target_date_mode": "previous_day",
+    "recursive_scan": True,
+    "include_extensions": [".xlsx", ".xls", ".csv"],
+    "max_file_mb": 50,
+    "max_rows_per_file": 200_000,
+    "header_scan_rows": 20,
+    "outlier_iqr_k": 1.5,
+    "top_n": 8,
+    "max_charts": 8,
+    "comparison": {"enabled": True, "lookback_days": 1},
+    "report": {
+        "title": "每日经营数据洞察报告",
+        "company": "InsightFlow · Portfolio Demo",
+        "max_table_rows": 100,
+        "accent": "#2563eb",
+    },
+    "scheduler": {"task_name": "InsightFlow_Daily_0930", "grace_minutes": 180},
+}
+
+
+class ConfigError(RuntimeError):
+    """Raised when configuration is missing required or invalid values."""
+
+
+@dataclass
+class ReportSettings:
+    title: str = "每日经营数据洞察报告"
+    company: str = "InsightFlow · Portfolio Demo"
+    max_table_rows: int = 100
+    accent: str = "#2563eb"
+
+
+@dataclass
+class ComparisonSettings:
+    enabled: bool = True
+    lookback_days: int = 1
+
+
+@dataclass
+class SchedulerSettings:
+    task_name: str = "InsightFlow_Daily_0930"
+    grace_minutes: int = 180
+
+
+@dataclass
+class Settings:
+    project_root: Path
+    config_path: Path
+    source_dir: Path
+    output_dir: Path
+    log_dir: Path
+    state_dir: Path
+    app_name: str = "InsightFlow"
+    version: str = APP_VERSION
+    timezone: str = "Asia/Shanghai"
+    schedule_time: str = "09:30"
+    target_date_mode: str = "previous_day"
+    recursive_scan: bool = True
+    include_extensions: tuple[str, ...] = (".xlsx", ".xls", ".csv")
+    max_file_mb: float = 50
+    max_rows_per_file: int = 200_000
+    header_scan_rows: int = 20
+    outlier_iqr_k: float = 1.5
+    top_n: int = 8
+    max_charts: int = 8
+    comparison: ComparisonSettings = field(default_factory=ComparisonSettings)
+    report: ReportSettings = field(default_factory=ReportSettings)
+    scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
+
+    @property
+    def max_file_bytes(self) -> int:
+        return int(self.max_file_mb * 1024 * 1024)
+
+    def ensure_runtime_dirs(self) -> None:
+        for path in (self.output_dir, self.log_dir, self.state_dir):
+            ensure_dir(path)
+
+    def target_date(self, reference: date | None = None) -> date:
+        """Return the reporting date (the previous calendar day by default)."""
+        base = reference or _today(self.timezone)
+        if self.target_date_mode == "previous_day":
+            return base - timedelta(days=1)
+        if self.target_date_mode == "same_day":
+            return base
+        raise ConfigError(f"不支持的 target_date_mode: {self.target_date_mode!r}")
+
+    def baseline_date(self, target: date) -> date | None:
+        if not self.comparison.enabled:
+            return None
+        return target - timedelta(days=max(1, int(self.comparison.lookback_days)))
+
+    def public_dict(self) -> dict[str, Any]:
+        return {
+            "app_name": self.app_name,
+            "version": self.version,
+            "timezone": self.timezone,
+            "source_dir": self.source_dir.as_posix(),
+            "output_dir": self.output_dir.as_posix(),
+            "log_dir": self.log_dir.as_posix(),
+            "state_dir": self.state_dir.as_posix(),
+            "schedule_time": self.schedule_time,
+            "target_date_mode": self.target_date_mode,
+            "recursive_scan": self.recursive_scan,
+            "include_extensions": list(self.include_extensions),
+            "max_file_mb": self.max_file_mb,
+            "comparison": {
+                "enabled": self.comparison.enabled,
+                "lookback_days": self.comparison.lookback_days,
+            },
+        }
+
+
+def _today(timezone_name: str) -> date:
+    from .utils import now_local
+
+    return now_local(timezone_name).date()
+
+
+def find_project_root(start: Path | None = None) -> Path:
+    """Locate the repository root, preferring an explicit environment hint."""
+    candidates: list[Path] = []
+    env_home = os.environ.get("INSIGHTFLOW_HOME")
+    if env_home:
+        candidates.append(Path(env_home).expanduser())
+    if start:
+        candidates.append(Path(start).resolve())
+    candidates.append(Path.cwd().resolve())
+    package_root = Path(__file__).resolve().parents[2]
+    candidates.append(package_root)
+
+    for candidate in candidates:
+        current = candidate if candidate.is_dir() else candidate.parent
+        for parent in [current, *current.parents]:
+            if (parent / "config" / "config.json").is_file() or (parent / "pyproject.toml").is_file():
+                return parent
+    return package_root
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_settings(
+    config_path: str | Path | None = None,
+    project_root: str | Path | None = None,
+    overrides: dict[str, Any] | None = None,
+) -> Settings:
+    root = Path(project_root).expanduser().resolve() if project_root else find_project_root()
+    if config_path:
+        path = Path(config_path).expanduser()
+        if not path.is_absolute():
+            path = root / path
+    else:
+        path = root / "config" / "config.json"
+        if not path.is_file():
+            path = root / "config" / "config.example.json"
+
+    raw = read_json(path, default=None) if path.is_file() else {}
+    if not isinstance(raw, dict):
+        raise ConfigError(f"配置文件不是有效的 JSON 对象: {path}")
+    merged = _deep_merge(_DEFAULTS, raw)
+    if overrides:
+        merged = _deep_merge(merged, overrides)
+
+    include_extensions = tuple(
+        str(extension).lower() if str(extension).startswith(".") else f".{str(extension).lower()}"
+        for extension in merged.get("include_extensions", _DEFAULTS["include_extensions"])
+    )
+    if not include_extensions:
+        raise ConfigError("include_extensions 不能为空")
+
+    schedule_time = str(merged.get("schedule_time", "09:30"))
+    _validate_schedule_time(schedule_time)
+
+    settings = Settings(
+        project_root=root,
+        config_path=path,
+        source_dir=_resolve_path(root, merged["source_dir"]),
+        output_dir=_resolve_path(root, merged["output_dir"]),
+        log_dir=_resolve_path(root, merged["log_dir"]),
+        state_dir=_resolve_path(root, merged["state_dir"]),
+        app_name=str(merged.get("app_name", "InsightFlow")),
+        version=str(merged.get("version", APP_VERSION)),
+        timezone=str(merged.get("timezone", "Asia/Shanghai")),
+        schedule_time=schedule_time,
+        target_date_mode=str(merged.get("target_date_mode", "previous_day")),
+        recursive_scan=bool(merged.get("recursive_scan", True)),
+        include_extensions=include_extensions,
+        max_file_mb=float(merged.get("max_file_mb", 50)),
+        max_rows_per_file=int(merged.get("max_rows_per_file", 200_000)),
+        header_scan_rows=max(3, int(merged.get("header_scan_rows", 20))),
+        outlier_iqr_k=float(merged.get("outlier_iqr_k", 1.5)),
+        top_n=max(3, int(merged.get("top_n", 8))),
+        max_charts=max(3, int(merged.get("max_charts", 8))),
+        comparison=ComparisonSettings(
+            enabled=bool(merged.get("comparison", {}).get("enabled", True)),
+            lookback_days=max(1, int(merged.get("comparison", {}).get("lookback_days", 1))),
+        ),
+        report=ReportSettings(
+            title=str(merged.get("report", {}).get("title", _DEFAULTS["report"]["title"])),
+            company=str(merged.get("report", {}).get("company", _DEFAULTS["report"]["company"])),
+            max_table_rows=max(10, int(merged.get("report", {}).get("max_table_rows", 100))),
+            accent=str(merged.get("report", {}).get("accent", "#2563eb")),
+        ),
+        scheduler=SchedulerSettings(
+            task_name=str(merged.get("scheduler", {}).get("task_name", _DEFAULTS["scheduler"]["task_name"])),
+            grace_minutes=max(0, int(merged.get("scheduler", {}).get("grace_minutes", 180))),
+        ),
+    )
+    if settings.max_file_mb <= 0:
+        raise ConfigError("max_file_mb 必须大于 0")
+    if settings.max_rows_per_file <= 0:
+        raise ConfigError("max_rows_per_file 必须大于 0")
+    return settings
+
+
+def _resolve_path(root: Path, value: Any) -> Path:
+    path = Path(str(value)).expanduser()
+    return path if path.is_absolute() else (root / path).resolve()
+
+
+def _validate_schedule_time(value: str) -> None:
+    try:
+        hour_text, minute_text = value.split(":", 1)
+        hour, minute = int(hour_text), int(minute_text)
+    except (ValueError, AttributeError) as exc:
+        raise ConfigError(f"schedule_time 必须是 HH:MM 格式: {value!r}") from exc
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ConfigError(f"schedule_time 超出范围: {value!r}")
