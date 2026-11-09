@@ -1,0 +1,36 @@
+{
+  "status": "draft-pending-reviewer",
+  "note": "开发用对照基线，最终 golden 由审查方确认后替换；deepseek 不得自行修改本文件。",
+  "samples": {
+    "01_主样本_干净": {
+      "日期": "date",
+      "区域": "dimension",
+      "订单号": "id",
+      "销售额": "metric",
+      "毛利率": "metric"
+    },
+    "02_边界样本_含问题": {
+      "日期": "date",
+      "区域": "dimension",
+      "订单号": "id",
+      "销售额": "metric",
+      "毛利率": "metric"
+    },
+    "03_工商登记_合成样本": {
+      "订单日期": "date",
+      "企业名称": "text",
+      "统一社会信用代码": "id",
+      "法定代表人": "text",
+      "注册资本(万元)": "metric",
+      "成立日期": "date",
+      "登记机关": "dimension",
+      "行业代码": "dimension",
+      "经营状态": "dimension",
+      "销售额": "metric"
+    }
+  },
+  "anomalies_expected": {
+    "02_边界样本_含问题": ["销售额"],
+    "03_工商登记_合成样本": ["注册资本(万元)"]
+  }
+}

@@ -96,16 +96,31 @@ class PackagingAndSafetyTests(unittest.TestCase):
         self.assertEqual(offenders, [], "核心与界面代码不得发起网络请求")
 
     def test_llm_bypass_is_isolated_from_core(self):
-        """Core must not import the LLM package, and the bypass is the only network user."""
+        """Only the assembly module may reference the LLM package; core stays clean."""
         llm_dir = ROOT / "src" / "insightflow" / "llm"
         self.assertTrue(llm_dir.is_dir(), "LLM 旁路目录应存在")
 
+        assembly = ROOT / "src" / "insightflow" / "semantic_assembly.py"
+        self.assertTrue(assembly.is_file(), "应存在唯一装配点 semantic_assembly.py")
+
+        offenders = []
         for path in (ROOT / "src" / "insightflow").rglob("*.py"):
-            if "llm" in path.parts:
+            if "llm" in path.parts or path == assembly:
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
-            self.assertNotIn("insightflow.llm", text, f"{path} 不应依赖 LLM 旁路")
-            self.assertNotIn("from .llm", text, f"{path} 不应依赖 LLM 旁路")
+            if "insightflow.llm" in text or "from .llm" in text or "import .llm" in text:
+                offenders.append(path.name)
+        self.assertEqual(offenders, [], "除 semantic_assembly.py 外，核心/GUI 不得引用 LLM 包")
+
+        # The whitelist is exact: exactly one assembly point references llm.
+        referencing = [
+            path.name
+            for path in (ROOT / "src" / "insightflow").rglob("*.py")
+            if "llm" not in path.parts
+            and ("insightflow.llm" in path.read_text(encoding="utf-8", errors="replace")
+                 or "from .llm" in path.read_text(encoding="utf-8", errors="replace"))
+        ]
+        self.assertEqual(referencing, ["semantic_assembly.py"])
 
         network_users = [
             path.name

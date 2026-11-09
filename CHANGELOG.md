@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.4-dev — LLM 阶段 1：语义 Schema 双轨接入
+
+- 新增 `semantic.py`（中立 `SemanticProvider` 契约 + 版本化产物 + 差异计算）、
+  `semantic_assembly.py`（唯一允许引用 LLM 的装配点）、`llm/adapter.py`（实现 provider）。
+- `pipeline.execute(..., semantic_provider=None)`：旁路双轨，落盘
+  `semantic_rule.json` / `semantic_schema.json` / `semantic_diff.json`；默认 None 时行为与产物不变。
+- `run --semantic {none,llm}`；配置缺失/请求失败/契约失败/预算熔断均逐表降级到规则语义。
+- 提示词升级 `analysis_plan_v2`（relations、anomalies、严格字段覆盖），适配器增加覆盖校验 + 一次重试。
+- 成本：单表 5 元 + 整批 20 元护栏。
+- 一致率实测（真实调用，golden 为草稿）：3 样本 18/20 = 90%，date/metric/id 零错误，
+  异常召回 100%，总成本 0.0354 元。详见 [docs/llm-stage1-notes.md](docs/llm-stage1-notes.md)。
+
 ## 1.0.3-dev — LLM PoC（未接入主流程）
 
 - 新增隔离包 `src/insightflow/llm/`：载荷最小化与脱敏、版本化输出契约、标准库 API 客户端

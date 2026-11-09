@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SCHEMA_VERSION = "1.0"
-PROMPT_VERSION = "analysis_plan_v1"
+PROMPT_VERSION = "analysis_plan_v2"
 
 ALLOWED_ROLES = {"date", "dimension", "metric", "id", "text"}
 
@@ -46,6 +46,7 @@ class SemanticField:
     unit: str = ""
     meaning: str = ""
     confidence: float = 0.0
+    relations: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -69,6 +70,7 @@ class AnalysisPlanDraft:
     dimensions: list[str]
     charts: list[ChartSkeleton]
     quality_focus: list[str]
+    anomalies: list[dict[str, str]] = field(default_factory=list)
     notes: str = ""
 
 
@@ -122,6 +124,7 @@ def _parse_field(item: dict[str, Any]) -> SemanticField:
         unit=str(item.get("unit") or ""),
         meaning=str(item.get("meaning") or ""),
         confidence=float(confidence),
+        relations=[str(value) for value in item.get("relations") or []],
     )
 
 
@@ -170,12 +173,22 @@ def parse_result(text: str, usage: dict[str, int] | None = None) -> LLMResult:
         value = plan.get(key, [])
         _require(isinstance(value, list), f"analysis_plan.{key} 必须是数组")
 
+    anomalies_raw = plan.get("anomalies") or []
+    _require(isinstance(anomalies_raw, list), "analysis_plan.anomalies 必须是数组")
+    anomalies: list[dict[str, str]] = []
+    for item in anomalies_raw:
+        _require(isinstance(item, dict), "analysis_plan.anomalies 的元素必须是对象")
+        if not all(isinstance(value, str) for value in item.values()):
+            raise ContractError("anomalies 只能包含文字说明（字段名/原因/行提示），不能带业务数字")
+        anomalies.append({str(key): str(value) for key, value in item.items()})
+
     draft = AnalysisPlanDraft(
         questions=[str(item) for item in plan.get("questions", [])],
         metrics=[str(item) for item in plan.get("metrics", [])],
         dimensions=[str(item) for item in plan.get("dimensions", [])],
         charts=charts,
         quality_focus=[str(item) for item in plan.get("quality_focus", [])],
+        anomalies=anomalies,
         notes=str(plan.get("notes") or ""),
     )
     return LLMResult(fields=fields, plan=draft, usage=dict(usage or {}), raw_text=text)

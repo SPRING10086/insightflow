@@ -24,6 +24,7 @@ from .scheduler import (
     remove_windows_task,
     run_daemon,
 )
+from .semantic_assembly import build_semantic_provider
 from .utils import jsonable
 
 
@@ -53,6 +54,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--trigger", choices=["manual", "scheduled"], default="manual")
     run.add_argument("--force", action="store_true", help="忽略数据指纹，强制重新生成")
     run.add_argument("--json", action="store_true", help="以 JSON 输出运行记录")
+    run.add_argument(
+        "--semantic",
+        choices=["none", "llm"],
+        default="none",
+        help="语义 Schema 提供者：none=规则（默认）；llm=旁路调用，失败自动降级规则",
+    )
 
     scan = subparsers.add_parser("scan", parents=[common], help="只扫描与预览，不生成报告")
     scan.add_argument("--date", help="目标日期 YYYY-MM-DD；默认昨天")
@@ -120,12 +127,20 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
+    provider = None
+    semantic_kind = getattr(args, "semantic", "none")
+    if semantic_kind and semantic_kind != "none":
+        try:
+            provider = build_semantic_provider(semantic_kind)
+        except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
+            _error(f"语义提供者不可用，已降级为规则口径：{exc}")
     record = execute(
         settings,
         target_date=args.date,
         trigger=args.trigger,
         force=args.force,
         source_dir=args.source,
+        semantic_provider=provider,
     )
     if args.json:
         print(json.dumps(jsonable(record), ensure_ascii=False, indent=2))

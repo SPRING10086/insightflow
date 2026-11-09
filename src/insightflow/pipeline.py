@@ -41,6 +41,16 @@ from .planner import build_plan, effective_fields
 from .readers import read_sources
 from .report import ReportError, render_report
 from .schema import detect_schema
+from .semantic import (
+    ARTIFACT_VERSION,
+    SemanticArtifact,
+    TableSample,
+    TableSemantics,
+    diff_artifacts,
+    fields_from_rule_schema,
+    rule_artifact,
+    save_artifacts,
+)
 from .utils import (
     atomic_write_json,
     ensure_dir,
@@ -129,6 +139,7 @@ def execute(
     now: datetime | None = None,
     source_dir: Path | str | None = None,
     on_step: Callable[[str, str], None] | None = None,
+    semantic_provider: Any | None = None,
 ) -> RunRecord:
     """Run the full pipeline once and always return a structured record.
 
@@ -136,6 +147,11 @@ def execute(
     each internal step finishes; the desktop shell uses it for live progress.
     It must never influence the run: exceptions raised by an observer are
     swallowed, and ``None`` (the default) means zero behaviour change.
+
+    ``semantic_provider`` enables the optional LLM semantic track.  When given,
+    the rule schema and the provider schema are both persisted and diffed, but
+    the report still consumes the rule schema (dual-track bypass).  ``None`` is
+    the default and keeps every artifact byte-for-byte unchanged.
     """
     settings = settings or load_settings()
     settings.ensure_runtime_dirs()
@@ -275,6 +291,22 @@ def execute(
                 logger.info("run %s skipped: identical fingerprint, report=%s", run_id, record.report_path)
                 return record
 
+        # 4.5) Optional LLM semantic bypass (dual-track).  Built only after the
+        # idempotency check so a skipped run never spends API budget.
+        semantic_bundle: dict[str, Any] | None = None
+        if semantic_provider is not None:
+            step_start = time.perf_counter()
+            semantic_bundle = _build_semantic_bundle(semantic_provider, prepared, record, logger)
+            artifact = semantic_bundle["provider"]
+            _add_step(
+                record,
+                "语义 Schema（旁路）",
+                step_start,
+                f"{len(artifact.tables)} 张表；来源={artifact.source_kind}；"
+                f"角色一致率={semantic_bundle['diff']['role_agreement']:.2%}；"
+                f"成本 {artifact.cost_cny:.4f} 元。",
+            )
+
         # 5) Cleaning
         step_start = time.perf_counter()
         clean_fields = {
@@ -351,6 +383,8 @@ def execute(
         step_start = time.perf_counter()
         day_dir = ensure_dir(settings.output_dir / target.isoformat())
         _write_artifacts(day_dir, result, plan, cleaned, cleaning_report, analysis_fields)
+        if semantic_bundle is not None:
+            _persist_semantic(day_dir, semantic_bundle, record)
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))
@@ -437,6 +471,112 @@ def execute(
 
 
 # ---------------------------------------------------------------------------
+# Semantic dual-track (optional, injected provider)
+# ---------------------------------------------------------------------------
+
+
+def _build_semantic_bundle(
+    provider: Any,
+    prepared: dict[str, Any],
+    record: RunRecord,
+    logger: logging.Logger,
+) -> dict[str, Any]:
+    """Ask the provider for semantics, fall back to rule semantics per table."""
+    table_schemas = prepared.get("table_schemas") or []
+    rule = rule_artifact(table_schemas)
+    tables: list[TableSemantics] = []
+    spent = 0.0
+    latency = 0
+    any_llm = False
+    any_fallback = False
+    prompt_version = str(getattr(provider, "prompt_version", "") or "")
+    provider_name = str(getattr(provider, "name", "llm"))
+
+    for table, schema in table_schemas:
+        sample = TableSample(
+            name=table.source.relative_path,
+            source=table.source.relative_path,
+            sheet=table.sheet_label,
+            field_names=[field.original for field in schema.fields.values()],
+            rows=table.frame.head(20).to_dict("records"),
+        )
+        try:
+            result = provider.describe(sample)
+        except Exception as exc:  # noqa: BLE001 - every failure degrades, never aborts
+            any_fallback = True
+            message = f"{type(exc).__name__}: {exc}"
+            record.warnings.append(f"[semantic_fallback] {sample.name}: {message}")
+            logger.warning("semantic provider fallback %s: %s", sample.name, message)
+            tables.append(
+                TableSemantics(
+                    table=sample.name,
+                    source=sample.source,
+                    sheet=sample.sheet,
+                    provider=provider_name,
+                    source_kind="fallback",
+                    fields=fields_from_rule_schema(schema),
+                    error=message[:300],
+                )
+            )
+            continue
+
+        any_llm = True
+        spent += float(getattr(result, "cost_cny", 0.0) or 0.0)
+        latency += int(getattr(result, "latency_ms", 0) or 0)
+        prompt_version = prompt_version or str(getattr(result, "prompt_version", "") or "")
+        tables.append(
+            TableSemantics(
+                table=sample.name,
+                source=sample.source,
+                sheet=sample.sheet,
+                provider=provider_name,
+                source_kind=str(getattr(result, "source_kind", "llm")),
+                fields=list(result.fields),
+                cost_cny=float(getattr(result, "cost_cny", 0.0) or 0.0),
+                latency_ms=int(getattr(result, "latency_ms", 0) or 0),
+                anomalies=list(getattr(result, "anomalies", []) or []),
+            )
+        )
+
+    if any_llm and any_fallback:
+        source_kind = "mixed"
+    elif any_llm:
+        source_kind = "llm"
+    else:
+        source_kind = "fallback"
+
+    artifact = SemanticArtifact(
+        version=ARTIFACT_VERSION,
+        prompt_version=prompt_version or "unknown",
+        generated_at=now_local().isoformat(timespec="seconds"),
+        provider=provider_name,
+        source_kind=source_kind,
+        tables=tables,
+        cost_cny=spent,
+        latency_ms=latency,
+    )
+    return {"rule": rule, "provider": artifact, "diff": diff_artifacts(rule, artifact)}
+
+
+def _persist_semantic(day_dir: Path, bundle: dict[str, Any], record: RunRecord) -> None:
+    """Write the three artifacts and surface a compact summary in the run record."""
+    written = save_artifacts(day_dir, bundle["rule"], bundle["provider"], bundle["diff"])
+    artifact = bundle["provider"]
+    diff = bundle["diff"]
+    record.metadata["semantic_schema"] = {
+        "provider": artifact.provider,
+        "source_kind": artifact.source_kind,
+        "prompt_version": artifact.prompt_version,
+        "role_agreement": diff["role_agreement"],
+        "unit_agreement": diff["unit_agreement"],
+        "key_role_errors": len(diff["key_role_errors"]),
+        "cost_cny": round(artifact.cost_cny, 6),
+        "latency_ms": artifact.latency_ms,
+        "files": [path.name for path in written],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Preparation
 # ---------------------------------------------------------------------------
 
@@ -453,11 +593,13 @@ def _prepare(
     date_columns: dict[str, str] = {}
     warnings: list[str] = []
     extractions: list[tuple[Any, PeriodExtraction]] = []
+    table_schemas: list[tuple[Any, Any]] = []
     unparseable_rows = 0
     header_repairs = 0
 
     for table in read_result.tables:
         schema = detect_schema(table.frame, settings.header_scan_rows, date_order=settings.date_order)
+        table_schemas.append((table, schema))
         extraction = extract_periods(table, schema, target, baseline, date_order=settings.date_order)
         extractions.append((table, extraction))
         header_repairs += int(getattr(table, "header_repairs", 0) or 0)
@@ -502,6 +644,7 @@ def _prepare(
         "date_columns": date_columns,
         "warnings": _dedupe(warnings),
         "extractions": extractions,
+        "table_schemas": table_schemas,
         "unparseable_rows": unparseable_rows,
         "header_repairs": header_repairs,
     }
