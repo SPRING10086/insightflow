@@ -78,3 +78,47 @@ Ran 262 tests  OK        （260 + 2 打包防泄漏回归）
 
 - 分发包**未签名**，也**未在干净虚拟机**上验证（checklist 与 `verify_release.ps1` 在 5a 收尾交付）。
 - 冒烟覆盖无密钥降级路径；有密钥的真实调用另在有 `.env` 的环境抽测，密钥不进分发包。
+
+## 5a-3 JSON 稳定性与统计（2026-11-09）
+
+### 统一重试与预算阻断
+
+- 结构化输出失败（JSON 不闭合/契约不符）按 `llm.retry.structured_output`（默认额外 2 次）重试，附上一次错误与格式要求；
+- **重试前先查预算**：`剩余预算 = batch_cny - 已花 - 本次调用成本`；若 `剩余 <= 0` 或 `预估重试成本 > 剩余`，
+  记为 `retry_blocked` 并立即降级，**不再发起会烧钱的重试**；
+- 语义、计划、执行、叙事四条链路全部接入同一策略；传输层 429/超时重试仍独立（`retry.transport`）。
+
+### 统计项（核心中立模块 `insightflow/stats.py`，llm 侧 re-export）
+
+`calls / retries / json_failures / fallbacks / retry_blocked / cost_cny / max_prompt_tokens / prompt_warn`，
+写入 `run_record.metadata.llm_stats`；四段旁路任一为 fallback 时 `fallbacks` 递增，叙事失败也计入。
+
+- `scripts/llm_stats.py` 跨运行汇总 `output/*/run_record.json`：
+  `runs / runs_with_llm / calls / json_failures / retries / fallbacks / retry_blocked / cost / json_failure_rate / fallback_rate`；
+  无 LLM 的运行计入 runs 但贡献零，**0 次运行也有确定输出**。
+
+### 长文本成本预警
+
+单次 `prompt_tokens > llm.warn_prompt_tokens`（默认 8000）时记录 `prompt_warn=true` 并 `logger.warning`，
+继续执行但不放宽预算护栏。
+
+### 测试（6 项，先红后绿）
+
+- 语义链路：坏 JSON 重试到上限 → `calls=3 / json_failures=3 / retries=2`；
+- 预算阻断：首次调用后剩余不足 → `retry_blocked=1`、仅 1 次调用、抛 `CostLimitExceeded`；
+- 叙事链路：坏 JSON 一次后成功 → `retries=1`、结果正常；
+- 管线故障注入：语义坏 JSON → `semantic_schema` 为 fallback、`status=success`、`metadata.llm_stats` 有失败/重试/降级；
+- 跨运行汇总：0 次运行与 2 次运行的聚合值。
+
+### 验证
+
+```text
+Ran 268 tests  OK
+便携包冒烟 17/17 PASS（重建 dist 208 MB）
+```
+
+### 已知边界
+
+- 执行链路（代码生成）的 JSON 重试固定为 1 次追加（沿用原设计），未使用 `retry.structured_output` 配置；
+- 长 prompt 只预警不截断；截断会改变输入语义，留待后续评估。
+

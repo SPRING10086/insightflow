@@ -171,6 +171,8 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         "batch_budget_cny": budget,
         "request_timeout_seconds": request_timeout,
         "transport_retries": retries,
+        "max_structured_retries": llm.retry_structured,
+        "warn_prompt_tokens": llm.warn_prompt_tokens,
     }
 
     provider = None
@@ -205,6 +207,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
                 memory_mb=llm.memory_mb,
                 request_timeout_seconds=request_timeout,
                 transport_retries=retries,
+                warn_prompt_tokens=llm.warn_prompt_tokens,
             )
         except Exception as exc:  # noqa: BLE001
             _error(f"执行提供者不可用，已降级为规则结果：{exc}")

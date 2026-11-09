@@ -17,6 +17,14 @@
 - `--narrative` 降级文案统一为“降级”，便于自动化断言。
 - 新增 `tests/test_packaging.py` 防泄漏回归。测试 262 项。
 
+### 5a-3 JSON 稳定性与统计
+
+- 四条 LLM 链路统一结构化重试（默认额外 2 次，可配），**重试前检查预算**，不足即 `retry_blocked` 降级。
+- 新增中立 `insightflow/stats.py`：`calls/retries/json_failures/fallbacks/retry_blocked/cost/max_prompt_tokens/prompt_warn`，
+  写入 `run_record.metadata.llm_stats`；`scripts/llm_stats.py` 跨运行汇总（含 0 次运行）。
+- 长 prompt 超阈值告警（默认 8000 tokens），不截断、不放宽预算。
+- 测试 268 项；便携包冒烟 17/17。
+
 ## 1.0.8-dev — LLM 阶段 4：可视化 HTML 叙事
 
 - 新增 `narrative.py`（叙事协议、事实映射、占位符校验/渲染、产物）与

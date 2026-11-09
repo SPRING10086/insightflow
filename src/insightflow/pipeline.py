@@ -58,6 +58,7 @@ from .execution import (
     save_execution_artifacts,
 )
 from .schema import detect_schema
+from .stats import LLMStats
 from .planning import PLAN_VERSION, PlanArtifact, plan_diff, rule_plan_artifact, save_plan_artifacts
 from .semantic import (
     ARTIFACT_VERSION,
@@ -477,8 +478,7 @@ def execute(
             else:
                 _add_step(record, "叙事（旁路）", step_start, "已降级为规则洞察（原因见 metadata.narrative）")
 
-        # 8) Artifacts + report
-        step_start = time.perf_counter()
+        # 8) Artifacts + report        step_start = time.perf_counter()
         day_dir = ensure_dir(settings.output_dir / target.isoformat())
         _write_artifacts(day_dir, result, plan, cleaned, cleaning_report, analysis_fields)
         if semantic_bundle is not None:
@@ -489,6 +489,17 @@ def execute(
             _persist_execution(day_dir, execution_bundle, record)
         if narrative_bundle is not None:
             _persist_narrative(day_dir, narrative_bundle, record)
+        if any(
+            item is not None
+            for item in (semantic_provider, plan_provider, execution_provider, narrative_provider)
+        ):
+            record.metadata["llm_stats"] = _collect_llm_stats(
+                (semantic_provider, plan_provider, execution_provider, narrative_provider),
+                semantic_bundle,
+                plan_bundle,
+                execution_bundle,
+                narrative_bundle,
+            ).to_dict()
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))
@@ -914,6 +925,34 @@ def _persist_narrative(day_dir: Path, bundle: dict[str, Any], record: RunRecord)
         "placeholders": len(bundle["rendered"].get("mapping") or {}),
         "files": [path.name for path in written],
     }
+
+
+def _collect_llm_stats(
+    providers: tuple[Any, Any, Any, Any],
+    semantic_bundle: dict[str, Any] | None,
+    plan_bundle: dict[str, Any] | None,
+    execution_bundle: dict[str, Any] | None,
+    narrative_bundle: dict[str, Any] | None,
+) -> LLMStats:
+    """Merge provider counters and count fallbacks from the four bypass artifacts."""
+    stats = LLMStats()
+    for provider in providers:
+        stats.merge(getattr(provider, "stats", None))
+
+    for bundle, pick in (
+        (semantic_bundle, lambda item: item["provider"].source_kind),
+        (plan_bundle, lambda item: item["llm"].source_kind),
+        (execution_bundle, lambda item: item["llm"].source_kind),
+    ):
+        if bundle is not None and pick(bundle) == "fallback":
+            stats.record_fallback()
+
+    if narrative_bundle is None:
+        if providers[3] is not None:
+            stats.record_fallback()
+    elif (narrative_bundle.get("meta") or {}).get("source_kind") == "fallback":
+        stats.record_fallback()
+    return stats
 
 
 # ---------------------------------------------------------------------------

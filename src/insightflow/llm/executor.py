@@ -18,6 +18,7 @@ from .client import CostLimitExceeded, DeepSeekClient, LLMConfig
 from .contracts import ContractError, check_no_business_numbers
 from .payloads import mask_value
 from .sandbox import SandboxError, run_sandbox, validate_code
+from .stats import LLMStats
 
 EXECUTION_PROMPT_VERSION = "execution_v1"
 PROMPT_FILE = Path(__file__).with_name("prompts") / "execution_v1.md"
@@ -35,6 +36,8 @@ class LLMExecutionProvider:
         timeout_seconds: float = 10.0,
         memory_mb: int = 512,
         prompt_text: str | None = None,
+        stats: Any | None = None,
+        warn_prompt_tokens: int = 8000,
     ) -> None:
         self.config = config
         self.transport = transport
@@ -45,6 +48,8 @@ class LLMExecutionProvider:
         self.spent_cny = 0.0
         self.last_code: CodeArtifact | None = None
         self._feedback = ""
+        self.stats = stats or LLMStats()
+        self.warn_prompt_tokens = int(warn_prompt_tokens)
 
     def _generate(self, spec: ExecutionSpec, frame, fields: list[FieldSemantics]) -> CodeArtifact:
         if self.spent_cny >= self.batch_budget_cny:
@@ -68,15 +73,26 @@ class LLMExecutionProvider:
             self._feedback = ""
         client = DeepSeekClient(self.config, transport=self.transport)
         started = time.perf_counter()
+        self.stats.record_call()
         content, usage = client.complete(messages)
         latency_ms = int((time.perf_counter() - started) * 1000)
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        self.stats.add_usage(
+            prompt_tokens,
+            client.meter.cost_for(prompt_tokens, int(usage.get("completion_tokens") or 0)),
+            self.warn_prompt_tokens,
+        )
         try:
             data = json.loads(content, strict=False)
+            if not isinstance(data, dict) or not isinstance(data.get("code"), str) or not data["code"].strip():
+                raise ContractError("输出必须包含非空 code 字符串")
+            check_no_business_numbers({key: value for key, value in data.items() if key != "code"})
         except json.JSONDecodeError as exc:
+            self.stats.record_json_failure()
             raise ContractError(f"代码不是合法 JSON：{exc}") from exc
-        if not isinstance(data, dict) or not isinstance(data.get("code"), str) or not data["code"].strip():
-            raise ContractError("输出必须包含非空 code 字符串")
-        check_no_business_numbers({key: value for key, value in data.items() if key != "code"})
+        except ContractError:
+            self.stats.record_json_failure()
+            raise
         code = data["code"]
         cost = client.meter.total_cny
         self.spent_cny += cost
@@ -104,10 +120,14 @@ class LLMExecutionProvider:
                     timeout_seconds=self.timeout_seconds,
                     memory_mb=self.memory_mb,
                 )
-            except SandboxError as exc:
+            except (SandboxError, ContractError) as exc:
                 last_error = exc
                 if attempt == 1:
                     raise
+                if self.stats.cost_cny >= self.batch_budget_cny:
+                    self.stats.record_retry_blocked()
+                    raise CostLimitExceeded("retry_blocked: 执行重试将超出整批预算") from None
+                self.stats.record_retry()
                 self._feedback = f"上次代码未通过校验：{exc}。不要造新列（assign），直接对 metric 列聚合。"
                 continue
             return ExecutionResult(

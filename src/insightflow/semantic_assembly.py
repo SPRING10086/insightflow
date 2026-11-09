@@ -43,6 +43,8 @@ def build_semantic_provider(
     batch_budget_cny: float = 20.0,
     request_timeout_seconds: float | None = None,
     transport_retries: int | None = None,
+    max_structured_retries: int | None = None,
+    warn_prompt_tokens: int | None = None,
 ) -> SemanticProvider | None:
     """Build a stage-1 semantic provider; ``none`` disables the bypass."""
     if not _token(kind, "语义"):
@@ -55,6 +57,8 @@ def build_semantic_provider(
         _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
+        max_structured_retries=2 if max_structured_retries is None else int(max_structured_retries),
+        warn_prompt_tokens=8000 if warn_prompt_tokens is None else int(warn_prompt_tokens),
     )
 
 
@@ -68,6 +72,8 @@ def build_execution_provider(
     memory_mb: int = 512,
     request_timeout_seconds: float | None = None,
     transport_retries: int | None = None,
+    max_structured_retries: int | None = None,
+    warn_prompt_tokens: int | None = None,
 ) -> Any | None:
     """Build a stage-3 execution provider; ``none`` disables controlled execution."""
     if not _token(kind, "执行"):
@@ -81,6 +87,7 @@ def build_execution_provider(
         batch_budget_cny=batch_budget_cny,
         timeout_seconds=timeout_seconds,
         memory_mb=memory_mb,
+        warn_prompt_tokens=8000 if warn_prompt_tokens is None else int(warn_prompt_tokens),
     )
 
 
@@ -92,6 +99,8 @@ def build_narrative_provider(
     batch_budget_cny: float = 20.0,
     request_timeout_seconds: float | None = None,
     transport_retries: int | None = None,
+    max_structured_retries: int | None = None,
+    warn_prompt_tokens: int | None = None,
 ) -> Any | None:
     """Build a stage-4 narrative provider; ``none`` keeps the rule insights only."""
     if not _token(kind, "叙事"):
@@ -103,6 +112,8 @@ def build_narrative_provider(
         _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
+        max_structured_retries=2 if max_structured_retries is None else int(max_structured_retries),
+        warn_prompt_tokens=8000 if warn_prompt_tokens is None else int(warn_prompt_tokens),
     )
 
 
@@ -114,6 +125,8 @@ def build_plan_provider(
     batch_budget_cny: float = 20.0,
     request_timeout_seconds: float | None = None,
     transport_retries: int | None = None,
+    max_structured_retries: int | None = None,
+    warn_prompt_tokens: int | None = None,
 ) -> PlanProvider | None:
     """Build a stage-2 plan provider; ``none`` keeps the rule plan only."""
     if not _token(kind, "计划"):
@@ -125,4 +138,6 @@ def build_plan_provider(
         _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
+        max_structured_retries=2 if max_structured_retries is None else int(max_structured_retries),
+        warn_prompt_tokens=8000 if warn_prompt_tokens is None else int(warn_prompt_tokens),
     )
