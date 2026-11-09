@@ -61,17 +61,19 @@ def _statements(path: Path) -> set[int]:
     return {node.lineno for node in ast.walk(tree) if isinstance(node, ast.stmt)}
 
 
-def run(threshold: float, skip_gui: bool) -> int:
+def run(threshold: float, skip_gui: bool, show_missing: bool = False) -> int:
     loader = unittest.TestLoader()
     names = [f"tests.test_{name}" for name in ("defects", "pipeline", "readers", "schema_cleaning", "utils")]
-    if skip_gui:
-        suite = unittest.TestSuite(loader.loadTestsFromName(name) for name in names)
-    else:
-        suite = loader.discover(str(ROOT / "tests"))
 
     stream = io.StringIO()
+    # Trace before *importing* the app/test modules: module-level and dataclass
+    # class-body statements execute at import time and must count as covered.
     sys.settrace(_tracer)
     try:
+        if skip_gui:
+            suite = unittest.TestSuite(loader.loadTestsFromName(name) for name in names)
+        else:
+            suite = loader.discover(str(ROOT / "tests"))
         result = unittest.TextTestRunner(stream=stream, verbosity=0).run(suite)
     finally:
         sys.settrace(None)
@@ -104,6 +106,17 @@ def run(threshold: float, skip_gui: bool) -> int:
         print(f"{name:<45}{hit:>6}{count:>6}{hit / count * 100:>8.1f}%")
     print("-" * 66)
     print(f"核心合计：{covered}/{total} = {percent:.1f}%  门槛：{threshold:.1f}%")
+
+    if show_missing:
+        print("\n未覆盖行：")
+        for path in sorted(SRC.rglob("*.py")):
+            if not _target(str(path)):
+                continue
+            missing = sorted(_statements(path) - _EXECUTED.get(str(path), set()))
+            if missing:
+                rel = path.relative_to(ROOT).as_posix()
+                chunks = [str(line) for line in missing]
+                print(f"{rel}: {', '.join(chunks)}")
     return 0 if percent >= threshold else 1
 
 
@@ -111,8 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="核心代码行覆盖率门槛（零依赖）")
     parser.add_argument("--threshold", type=float, default=85.0)
     parser.add_argument("--skip-gui", action="store_true", help="只跑核心测试，速度更快")
+    parser.add_argument("--show-missing", action="store_true", help="列出未覆盖行号")
     args = parser.parse_args(argv)
-    return run(args.threshold, args.skip_gui)
+    return run(args.threshold, args.skip_gui, args.show_missing)
 
 
 if __name__ == "__main__":

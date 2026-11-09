@@ -20,18 +20,19 @@
   - 回归测试：`test_header_and_inline_units_are_scaled_per_value`、
     `test_column_without_inline_units_uses_header_multiplier`。
 
-- **P2-3 对账与覆盖率（对账已闭环，覆盖率门槛机制已建、目标未达）**
+- **P2-3 对账与覆盖率（已闭环）**
   - 新增 `scripts/reconcile.py`：独立于 pipeline，从产物重算行数守恒、指标合计、
-    血缘行号、填补标记一致性；不一致退出码 1。
-  - 新增 `scripts/coverage_gate.py`：零依赖（`sys.settrace` + AST）核心行覆盖率门槛，
-    CI 已接入 ratchet 门槛。
-  - **当前核心行覆盖率 60.3%，低于 85% 目标**；门槛先锁在 58% 防回退，
-    提升测试覆盖是后续唯一剩余工作。
+    血缘行号、填补标记一致性；不一致退出码 1（真实运行 11 项全通过）。
+  - 新增 `scripts/coverage_gate.py`：零依赖（`sys.settrace` + AST）核心行覆盖率门槛；
+    修正了"import 早于 tracer 启动"的统计口径缺陷，并新增 cli / scheduler /
+    discovery / utils 的错误分支测试。
+  - **核心行覆盖率 85.2%，达到 85% 门槛**；CI 已按 85% 强制。
 
 ### 验证
 
-- `python -m unittest discover -s tests`：**105 tests OK**。
-- `python scripts/reconcile.py output/<日期>`：真实运行产物对账通过。
+- `python -m unittest discover -s tests`：**139 tests OK**。
+- `python scripts/reconcile.py output/<日期>`：真实运行产物对账 11 项通过。
+- `python scripts/coverage_gate.py --threshold 85`：核心行覆盖率 85.2%，通过。
 
 ## 1.0.1 — 2026-11-08
 

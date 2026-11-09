@@ -50,10 +50,10 @@ jobs:
           python -m insightflow demo --date 2026-11-07
           python scripts/reconcile.py output/2026-11-07
 
-      # P2-3: coverage ratchet.  The commercial target is 85%; the gate is set at
-      # the current measured baseline so it can only go up, never down.
-      - name: Coverage ratchet (core, target 85%)
+      # P2-3: coverage gate.  Commercial target is 85%; measured 85.2%, so the
+      # gate now enforces the target instead of a ratchet baseline.
+      - name: Coverage gate (core >= 85%)
         env:
           PYTHONPATH: src
           PYTHONIOENCODING: utf-8
-        run: python scripts/coverage_gate.py --threshold 58
+        run: python scripts/coverage_gate.py --threshold 85
