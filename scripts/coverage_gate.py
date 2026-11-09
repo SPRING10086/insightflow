@@ -28,7 +28,9 @@ if str(ROOT) not in sys.path:
 #: analysis chain (discovery → readers → schema → normalize → cleaning →
 #: planner → analysis → report → pipeline).
 EXCLUDED_DIRS = {"gui"}
-EXCLUDED_FILES = {"__main__.py"}
+#: Entry points that run in a child process (or as a script) never appear in the
+#: parent tracer: they are covered by their own integration/fault-injection tests.
+EXCLUDED_FILES = {"__main__.py", "sandbox_worker.py"}
 
 _EXECUTED: dict[str, set[int]] = defaultdict(set)
 

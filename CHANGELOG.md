@@ -8,7 +8,7 @@
   字面量统一 `html.escape(quote=True)`，替换值白名单（数字/单位/中文/`¥`），渲染后校验无残留占位符、脚本数不变。
 - `--narrative none|llm`；默认关闭时报告零变化，任何失败回退规则洞察且 `status=success`。
 - 真实调用：3 验收样本 + 真实 2018 上海 300 行全部叙事成功（15–20 占位符、无残留、单次 ≈0.005 元）。
-- 测试 246 项。详见 [docs/llm-stage4-notes.md](docs/llm-stage4-notes.md)。
+- 测试 250 项。详见 [docs/llm-stage4-notes.md](docs/llm-stage4-notes.md)。
 
 ## 1.0.7-dev — LLM 阶段 3：受控执行
 

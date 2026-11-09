@@ -76,7 +76,7 @@ llm： narrative_gen.py + prompts/narrative_v1.md
 
 ```text
 python -m unittest discover -s tests
-Ran 246 tests  OK        （阶段 3 的 227 + 15 安全 + 4 管线）
+Ran 250 tests  OK        （阶段 3 的 227 + 15 安全 + 4 管线 + 4 叙事适配器）
 ```
 
 管线测试覆盖：默认关闭无区块/无产物、成功渲染且脚本数不变、两类失败回退（XSS/裸数字/未知引用/异常）、无叙事时报告内容确定性（仅归一化 runId/时间戳）。
