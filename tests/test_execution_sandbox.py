@@ -109,7 +109,13 @@ class StrictChainTests(unittest.TestCase):
 
     def test_groupby_apply_only_string_constant(self):
         validate_code('df.groupby("区域").apply("sum")', COLUMNS)
-        for code in ('df.groupby("区域").apply(sum)', 'df.groupby("区域").apply(lambda s: s.sum())'):
+        validate_code('df.groupby("区域").apply("mean")', COLUMNS)
+        for code in (
+            'df.groupby("区域").apply(sum)',
+            'df.groupby("区域").apply(lambda s: s.sum())',
+            'df.groupby("区域").apply("__class__")',
+            'df.groupby("区域").apply("os")',
+        ):
             with self.assertRaises(SandboxViolation):
                 validate_code(code, COLUMNS)
 

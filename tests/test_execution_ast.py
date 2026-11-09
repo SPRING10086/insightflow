@@ -60,6 +60,8 @@ DENIED = [
     ("df.groupby('区域').apply(lambda s: s.sum())", "lambda"),
     ("df.assign(x=df['销售额'].apply(lambda v: v))", "lambda"),
     ("df.assign(v=df['销售额'])", "assign"),
+    ("df.groupby('区域').apply('__class__')", "apply"),
+    ("df.groupby('区域').apply('os')", "apply"),
     ("[c for c in df.__class__]", "dunder"),
     ("df['幽灵列'].sum()", "hallucinated_field"),
     ("df.loc[:, '幽灵列']", "hallucinated_field"),

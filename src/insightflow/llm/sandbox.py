@@ -90,6 +90,9 @@ BUILTIN_ALLOWLIST = {
     "bool",
 }
 
+#: ``GroupBy.apply`` may only name these aggregations (no dunders, no callables).
+APPLY_FUNCTIONS = {"sum", "mean", "count", "size", "min", "max", "median", "std", "nunique"}
+
 FORBIDDEN_NAMES = {
     "open",
     "exec",
@@ -165,9 +168,6 @@ ALLOWED_ATTRS = {
     "max",
 }
 
-_ROOT_NAMES = {"df", "pd", "np"}
-
-
 class SandboxError(RuntimeError):
     """Base class for controlled-execution failures."""
 
@@ -225,6 +225,9 @@ def _check_call(node: ast.Call) -> None:
                 raise SandboxViolation("GroupBy.apply only accepts a string function name")
             if node.keywords:
                 raise SandboxViolation("GroupBy.apply does not accept keyword arguments")
+            name = node.args[0].value
+            if name.startswith("_") or name not in APPLY_FUNCTIONS:
+                raise SandboxViolation(f"GroupBy.apply name is not allowlisted: {name!r}")
         return
     raise SandboxViolation("calls must target an allowlisted name or method")
 
@@ -272,9 +275,6 @@ def validate_code(code: str, allowed_columns: set[str] | list[str]) -> None:
             for text in _string_constants(node.slice):
                 if text not in columns:
                     raise SandboxViolation(f"hallucinated_field: {text}")
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "groupby":
-            # handled below; kept for clarity
-            pass
 
     # groupby("字段") must reference a real column as well
     for node in ast.walk(tree):

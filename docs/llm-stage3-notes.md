@@ -77,7 +77,14 @@ Ran 224 tests  OK        （阶段 2 的 204 + 20 执行/AST/故障注入/管线
 1. **内存配额采用两阶段**：512MB Job 在 pandas 导入后才施加；若先施加，pandas 自身导入就会 MemoryError（实测 256/512MB 均失败，1024MB 才够）。这样配额只约束用户代码。
 2. **`assign` 从白名单移除**：模型用 `assign(v=...)` 造临时列会被"幻觉字段"校验误拦；改为禁止造列、直接对聚合列计算，并给执行加一次带反馈重试。03 因此从 fallback 转为 llm 通过。
 
-## 8. 未解决 / 已知风险
+## 9. P3 加固（复核后）
+
+- `GroupBy.apply` 的字符串参数改为**白名单聚合名**（`sum/mean/count/size/min/max/median/std/nunique`），
+  下划线名与非白名单名（如 `__class__`、`os`）一律静态拒绝；补 `apply('__class__')` 测试。
+- 清理 `sandbox.py` 死分支（未使用的 `_ROOT_NAMES`、groupby 空分支）。
+- 全量 227 tests OK。
+
+## 10. 未解决 / 已知风险
 
 - 真实 2018 语义 JSON 不闭合仍未根治（本轮降级一次），执行链路对它有效；
 - `memory_guard` 在无 Job 权限的环境会 fail-closed（拒绝执行并降级），未做 fallback 放行；
