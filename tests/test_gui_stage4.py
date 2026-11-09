@@ -73,6 +73,8 @@ class PackagingAndSafetyTests(unittest.TestCase):
         self.assertIn("拒绝访问", str(denied.exception))
 
     def test_source_has_no_network_imports(self):
+        # The approved LLM bypass (src/insightflow/llm/) is the only place that
+        # may touch the network; the analysis pipeline itself stays offline.
         forbidden = (
             "import requests",
             "import socket",
@@ -85,11 +87,32 @@ class PackagingAndSafetyTests(unittest.TestCase):
         )
         offenders = []
         for path in sorted((ROOT / "src").rglob("*.py")):
+            if "llm" in path.parts:
+                continue
             text = path.read_text(encoding="utf-8", errors="replace")
             for needle in forbidden:
                 if needle in text:
                     offenders.append(f"{path.relative_to(ROOT)}: {needle}")
         self.assertEqual(offenders, [], "核心与界面代码不得发起网络请求")
+
+    def test_llm_bypass_is_isolated_from_core(self):
+        """Core must not import the LLM package, and the bypass is the only network user."""
+        llm_dir = ROOT / "src" / "insightflow" / "llm"
+        self.assertTrue(llm_dir.is_dir(), "LLM 旁路目录应存在")
+
+        for path in (ROOT / "src" / "insightflow").rglob("*.py"):
+            if "llm" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            self.assertNotIn("insightflow.llm", text, f"{path} 不应依赖 LLM 旁路")
+            self.assertNotIn("from .llm", text, f"{path} 不应依赖 LLM 旁路")
+
+        network_users = [
+            path.name
+            for path in llm_dir.rglob("*.py")
+            if "urllib" in path.read_text(encoding="utf-8", errors="replace")
+        ]
+        self.assertEqual(network_users, ["client.py"], "只有 LLM 客户端允许使用 urllib")
 
     def test_launchers_exist_and_avoid_console(self):
         vbs = ROOT / "启动操作端(无控制台).vbs"

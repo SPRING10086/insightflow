@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3-dev — LLM PoC（未接入主流程）
+
+- 新增隔离包 `src/insightflow/llm/`：载荷最小化与脱敏、版本化输出契约、标准库 API 客户端
+  （重试/超时/成本熔断）、评估辅助与 CLI（`python -m insightflow.llm payload|plan`）。
+- 核心与 GUI 不依赖该包，且有测试断言（核心禁止 `import insightflow.llm`；
+  `llm/client.py` 是唯一允许使用 `urllib` 的文件）。
+- 成本护栏：4.5 元预警、5.0 元硬停；模型标识与单价全部外置（代码不内置默认值）。
+- `.gitignore` 增补 `.env`/`.env.*`（保留 `.env.example`）。
+- 评估现状见 [docs/llm-poc-report.md](docs/llm-poc-report.md)：架构与安全边界已机械验证，
+  真实计费/准确率待具备 API Key 的机器补测。
+
 ## 1.0.2 — 2026-11-09
 
 ### P2 商业级门槛（部分闭环）

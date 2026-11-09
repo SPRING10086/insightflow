@@ -26,3 +26,8 @@ my_data/
 # Generated demo screenshots are intentionally kept under docs/images/
 !docs/images/
 dist/
+
+# LLM PoC: keys and local env files must never be committed
+.env
+.env.*
+!.env.example

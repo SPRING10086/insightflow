@@ -29,4 +29,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-insightflow = ["templates/*.html", "assets/*.js", "assets/*.txt"]
+insightflow = ["templates/*.html", "assets/*.js", "assets/*.txt", "llm/prompts/*.md"]
