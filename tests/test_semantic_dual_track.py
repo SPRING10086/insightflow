@@ -285,7 +285,17 @@ class PipelineDualTrackTests(unittest.TestCase):
         from insightflow.models import FieldSpec
         from insightflow.pipeline import _build_semantic_bundle
 
-        frame = pd.DataFrame([{"日期": "2026-11-07", "销售额": "100", "登记机关": "杭州"}])
+        frame = pd.DataFrame(
+            [
+                {
+                    "日期": "2026-11-07",
+                    "销售额": "100",
+                    "登记机关": "杭州",
+                    "__imputed": "1",
+                    "__outlier": "0",
+                }
+            ]
+        )
         table = SimpleNamespace(
             source=SimpleNamespace(relative_path="a.csv"),
             sheet_label="CSV",
