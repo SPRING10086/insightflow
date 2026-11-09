@@ -43,7 +43,7 @@ def _config() -> LLMConfig:
 
 class ExecutionProviderTests(unittest.TestCase):
     def test_generate_then_run(self):
-        provider = LLMExecutionProvider(_config(), transport=lambda *args: (200, _response(GOOD)))
+        provider = LLMExecutionProvider(_config(), transport=lambda *args: (200, _response(GOOD)), memory_mb=2048)
         result = provider.execute(SPEC, FRAME, ["region", "revenue"], [])
         self.assertAlmostEqual(result.metrics["total"], 600.0)
         self.assertEqual(result.groups["columns"], ["region"])
@@ -57,7 +57,7 @@ class ExecutionProviderTests(unittest.TestCase):
             calls.append(1)
             return 200, _response(BAD)
 
-        provider = LLMExecutionProvider(_config(), transport=transport)
+        provider = LLMExecutionProvider(_config(), transport=transport, memory_mb=2048)
         with self.assertRaises(SandboxViolation):
             provider.execute(SPEC, FRAME, ["region", "revenue"], [])
         self.assertEqual(len(calls), 2)

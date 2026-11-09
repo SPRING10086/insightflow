@@ -18,9 +18,15 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from ..config import Settings
+from ..config import LLMSettings, Settings, load_settings
 from ..logging_setup import read_run_history
 from ..pipeline import execute
+from ..semantic_assembly import (
+    build_execution_provider,
+    build_narrative_provider,
+    build_plan_provider,
+    build_semantic_provider,
+)
 from ..services import preview as core_preview
 from ..utils import atomic_write_json, humanize_bytes, humanize_duration
 
@@ -225,13 +231,22 @@ def run_analysis(
         if stage is not None and on_stage is not None:
             on_stage(stage, STAGE_LABELS[stage])
 
+    providers, llm_warnings = build_llm_providers(settings)
     try:
-        record = execute(settings, target_date=target, trigger="manual", force=force, on_step=observe)
+        record = execute(
+            settings,
+            target_date=target,
+            trigger="manual",
+            force=force,
+            on_step=observe,
+            **providers,
+        )
     except Exception as exc:  # noqa: BLE001 - translate, never leak a traceback
         raise ServiceError(friendly_error(exc)) from exc
 
     summary = summarise(settings, record, target)
     summary["quality"] = collect_quality(settings, summary)
+    summary["llm_warnings"] = llm_warnings
     return summary
 
 
@@ -244,7 +259,7 @@ def summarise(settings: Settings, record: Any, target: date) -> dict[str, Any]:
     metrics = day_dir / "metrics.json"
     plan = day_dir / "analysis_plan.json"
 
-    return {
+    summary = {
         "run_id": record.run_id,
         "status": record.status,
         "status_label": STATUS_LABELS.get(record.status, record.status),
@@ -278,7 +293,9 @@ def summarise(settings: Settings, record: Any, target: date) -> dict[str, Any]:
             {"name": str(step.get("name", "")), "duration_ms": int(step.get("duration_ms", 0) or 0)}
             for step in record.steps
         ],
+        "llm": _llm_summary(record),
     }
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -718,6 +735,189 @@ def _config_payload(settings: Settings) -> dict[str, Any]:
             if isinstance(loaded, dict):
                 return loaded
     return {}
+
+
+def _llm_to_dict(llm: LLMSettings) -> dict[str, Any]:
+    return {
+        "enabled": llm.enabled,
+        "features": {name: getattr(llm, name) for name in LLMSettings.FEATURES},
+        "budget": {"per_table_cny": llm.budget_per_table_cny, "batch_cny": llm.budget_batch_cny},
+        "timeout": {"request_seconds": llm.request_timeout_seconds, "sandbox_seconds": llm.sandbox_timeout_seconds},
+        "sandbox": {"memory_mb": llm.memory_mb, "max_input_rows": llm.max_input_rows},
+        "retry": {"structured_output": llm.retry_structured, "transport": llm.retry_transport},
+        "warn_prompt_tokens": llm.warn_prompt_tokens,
+    }
+
+
+def build_llm_providers(settings: Settings) -> tuple[dict[str, Any], list[str]]:
+    """Build the enabled LLM providers for one GUI run.
+
+    Any provider construction failure (usually a missing key) is reported as a
+    friendly warning and that feature falls back to the rule path; the run must
+    never fail because the optional bypass is misconfigured.
+    """
+    llm = settings.llm
+    providers: dict[str, Any] = {
+        "semantic_provider": None,
+        "plan_provider": None,
+        "execution_provider": None,
+        "narrative_provider": None,
+    }
+    warnings: list[str] = []
+    if not llm.enabled:
+        return providers, warnings
+
+    common = {
+        "batch_budget_cny": llm.budget_batch_cny,
+        "request_timeout_seconds": llm.request_timeout_seconds,
+        "transport_retries": llm.retry_transport,
+        "max_structured_retries": llm.retry_structured,
+        "warn_prompt_tokens": llm.warn_prompt_tokens,
+    }
+
+    def attempt(label: str, factory: Callable[[], Any]) -> Any:
+        try:
+            return factory()
+        except Exception as exc:  # noqa: BLE001 - optional feature must not break the run
+            warnings.append(f"{label}未启用：{friendly_error(exc)}")
+            return None
+
+    if llm.feature_enabled("semantic"):
+        providers["semantic_provider"] = attempt(
+            "语义增强", lambda: build_semantic_provider("llm", **common)
+        )
+
+    if llm.feature_enabled("plan") or llm.feature_enabled("execute"):
+        providers["plan_provider"] = attempt("分析计划增强", lambda: build_plan_provider("llm", **common))
+
+    if (providers["plan_provider"] is not None or llm.feature_enabled("execute")) and providers[
+        "semantic_provider"
+    ] is None:
+        providers["semantic_provider"] = attempt(
+            "语义增强（计划依赖）", lambda: build_semantic_provider("llm", **common)
+        )
+
+    if llm.feature_enabled("execute"):
+        providers["execution_provider"] = attempt(
+            "受控执行",
+            lambda: build_execution_provider(
+                "llm",
+                batch_budget_cny=llm.budget_batch_cny,
+                timeout_seconds=llm.sandbox_timeout_seconds,
+                memory_mb=llm.memory_mb,
+                request_timeout_seconds=llm.request_timeout_seconds,
+                transport_retries=llm.retry_transport,
+                warn_prompt_tokens=llm.warn_prompt_tokens,
+            ),
+        )
+
+    if llm.feature_enabled("narrative"):
+        providers["narrative_provider"] = attempt(
+            "智能解读", lambda: build_narrative_provider("llm", **common)
+        )
+    return providers, warnings
+
+
+def save_llm_settings(
+    settings: Settings,
+    *,
+    enabled: bool,
+    features: dict[str, bool],
+) -> Settings:
+    """Persist the four GUI switches through the same validated config path."""
+    data = _config_payload(settings)
+    existing = data.get("llm") if isinstance(data.get("llm"), dict) else {}
+    raw = dict(existing)
+    raw["enabled"] = bool(enabled)
+    feature_raw = dict(existing.get("features") or {})
+    for name in LLMSettings.FEATURES:
+        feature_raw[name] = bool(features.get(name, False))
+    raw["features"] = feature_raw
+    validated = LLMSettings.from_dict(raw)
+
+    data["llm"] = _llm_to_dict(validated)
+    path = settings.project_root / "config" / "config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(path, data)
+    return load_settings(config_path=path, project_root=settings.project_root)
+
+
+def llm_key_configured(settings: Settings) -> bool:
+    """Whether an API key is available (never returns or logs the value)."""
+    import os
+
+    if os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("INSIGHTFLOW_LLM_API_KEY"):
+        return True
+    env_path = settings.project_root / ".env"
+    if env_path.is_file():
+        try:
+            for line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+                text = line.strip()
+                if text.startswith(("DEEPSEEK_API_KEY=", "INSIGHTFLOW_LLM_API_KEY=")):
+                    _, _, value = text.partition("=")
+                    if value.strip().strip("\"'").strip():
+                        return True
+        except OSError:
+            return False
+    return False
+
+
+def _llm_summary(record: Any) -> dict[str, Any]:
+    meta = getattr(record, "metadata", {}) or {}
+    stats = meta.get("llm_stats") or {}
+    semantic = meta.get("semantic_schema") or {}
+    plan = meta.get("plan") or {}
+    execution = meta.get("execution") or {}
+    narrative = meta.get("narrative") or {}
+    reasons: list[str] = []
+    for item in (semantic, plan, narrative):
+        reason = str(item.get("reason") or "")
+        if reason:
+            reasons.append(reason[:120])
+    for problem in execution.get("problems") or []:
+        reasons.append(str(problem)[:120])
+    return {
+        "enabled": bool(stats or semantic or plan or execution or narrative),
+        "cost_cny": float(stats.get("cost_cny") or 0.0),
+        "calls": int(stats.get("calls") or 0),
+        "json_failures": int(stats.get("json_failures") or 0),
+        "retry_blocked": int(stats.get("retry_blocked") or 0),
+        "semantic": str(semantic.get("source_kind") or ""),
+        "plan": str(plan.get("source_kind") or ""),
+        "execution": str(execution.get("source_kind") or ""),
+        "reconcile": execution.get("accepted"),
+        "narrative": str(narrative.get("source_kind") or ""),
+        "reasons": reasons,
+    }
+
+
+def llm_result_text(summary: dict[str, Any] | None) -> str:
+    """One-line, plain-language LLM status for the result zone."""
+    llm = (summary or {}).get("llm") or {}
+    if not llm.get("enabled"):
+        return "LLM 增强：未启用（当前为规则结果）"
+    labels = {"semantic": "语义", "plan": "计划", "execution": "执行", "narrative": "叙事"}
+    states = []
+    for key, label in labels.items():
+        kind = str(llm.get(key) or "")
+        if not kind:
+            continue
+        if kind == "llm":
+            states.append(f"{label}=LLM")
+        elif kind == "fallback":
+            states.append(f"{label}=已降级")
+        elif kind == "mixed":
+            states.append(f"{label}=部分降级")
+        else:
+            states.append(f"{label}={kind}")
+    parts = [f"LLM 成本 ¥{float(llm.get('cost_cny') or 0):.4f}"]
+    if states:
+        parts.append(" · ".join(states))
+    if llm.get("reconcile") is not None:
+        parts.append("对账" + ("通过" if llm["reconcile"] else "未通过"))
+    if llm.get("reasons"):
+        parts.append("原因：" + "；".join(llm["reasons"][:2]))
+    return " · ".join(parts)
 
 
 def save_paths(settings: Settings, source_dir: str, output_dir: str) -> Path:

@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from ..config import Settings, load_settings
+from ..config import LLMSettings, Settings, load_settings
 from . import services
 from .envcheck import COLOUR_BAD, EnvStatus, banner, check_environment, gate_message
 from .worker import MSG_DONE, MSG_FAILED, MSG_PROGRESS, MSG_STARTED, BackgroundWorker, Progress
@@ -64,6 +64,7 @@ class InsightFlowApp(tk.Tk):
         self._date_var = tk.StringVar(value=services.default_target_date(settings).isoformat())
         self._date_order_var = tk.StringVar(value=settings.date_order)
         self._result_var = tk.StringVar(value=services.result_caption(None))
+        self._llm_var = tk.StringVar(value=services.llm_result_text(None))
         self._elapsed_var = tk.StringVar(value="")
         self._force_var = tk.BooleanVar(value=False)
         self._schedule_var = tk.StringVar(value="定时任务：查询中…")
@@ -140,6 +141,10 @@ class InsightFlowApp(tk.Tk):
             font=(FONT_FAMILY, 9, "bold"),
         ).grid(row=0, column=1, sticky="e")
 
+        self._llm_btn = ttk.Button(top, text="LLM 增强（实验）", command=self._open_llm_dialog)
+        self._llm_btn.grid(row=0, column=2, sticky="e", padx=(8, 0))
+        self._refresh_llm_button()
+
         ttk.Label(
             header,
             style="Hint.TLabel",
@@ -165,6 +170,102 @@ class InsightFlowApp(tk.Tk):
                 pady=3,
                 font=(FONT_FAMILY, 9),
             ).grid(row=3, column=0, sticky="ew", pady=(2, 0))
+
+    def _refresh_llm_button(self) -> None:
+        if not hasattr(self, "_llm_btn"):
+            return
+        text = "LLM 增强：已开启" if self.settings.llm.enabled else "LLM 增强（实验）"
+        self._llm_btn.configure(text=text)
+
+    def _open_llm_dialog(self) -> None:
+        """Point-and-click switches; no config editing or command line needed."""
+        llm = self.settings.llm
+        dialog = tk.Toplevel(self)
+        dialog.title("LLM 增强（实验功能）")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding=14)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+
+        ttk.Label(frame, text="LLM 增强（实验功能）", font=(FONT_FAMILY, 12, "bold")).grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            frame,
+            style="Hint.TLabel",
+            wraplength=430,
+            justify="left",
+            text=(
+                "默认关闭。开启后会用大模型辅助理解数据；任何一步失败都会自动回退到规则结果，"
+                "报告里的所有数字仍由本地计算。"
+            ),
+        ).grid(row=1, column=0, sticky="w", pady=(2, 8))
+
+        master = tk.BooleanVar(value=llm.enabled)
+        ttk.Checkbutton(frame, text="启用 LLM 增强（总开关）", variable=master).grid(
+            row=2, column=0, sticky="w", pady=(0, 4)
+        )
+
+        labels = {
+            "semantic": "语义识别：自动理解每列是什么（字段含义/角色）",
+            "plan": "分析计划：建议重点看哪些指标和维度",
+            "execute": "受控执行：在本地沙箱里按计划计算（仍由本地算数字）",
+            "narrative": "智能解读：在报告里加一段文字说明",
+        }
+        feature_vars: dict[str, tk.BooleanVar] = {}
+        row = 3
+        for name in LLMSettings.FEATURES:
+            feature_vars[name] = tk.BooleanVar(value=getattr(llm, name))
+            ttk.Checkbutton(frame, text=labels[name], variable=feature_vars[name]).grid(
+                row=row, column=0, sticky="w", padx=(18, 0), pady=1
+            )
+            row += 1
+
+        ttk.Label(
+            frame,
+            style="Hint.TLabel",
+            wraplength=430,
+            justify="left",
+            text=(
+                f"成本上限（只读，防误改）：单表 ¥{llm.budget_per_table_cny:.0f} / "
+                f"整批 ¥{llm.budget_batch_cny:.0f}；本次运行已用会显示在结果区。"
+            ),
+        ).grid(row=row, column=0, sticky="w", pady=(8, 2))
+        row += 1
+
+        key_text = (
+            "已检测到 API Key。"
+            if services.llm_key_configured(self.settings)
+            else "未检测到 API Key：开启后会自动降级为规则结果（请联系运维配置 .env）。"
+        )
+        ttk.Label(frame, style="Hint.TLabel", wraplength=430, justify="left", text=key_text).grid(
+            row=row, column=0, sticky="w", pady=(2, 8)
+        )
+        row += 1
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=row, column=0, sticky="e", pady=(4, 0))
+
+        def save() -> None:
+            try:
+                self.settings = services.save_llm_settings(
+                    self.settings,
+                    enabled=master.get(),
+                    features={name: var.get() for name, var in feature_vars.items()},
+                )
+            except Exception as exc:  # noqa: BLE001 - show a readable message
+                messagebox.showerror("保存失败", services.friendly_error(exc), parent=dialog)
+                return
+            self._refresh_llm_button()
+            self._llm_var.set(services.llm_result_text(None))
+            messagebox.showinfo("已保存", "LLM 开关已保存，下次运行生效。", parent=dialog)
+            dialog.destroy()
+
+        ttk.Button(buttons, text="取消", command=dialog.destroy).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(buttons, text="保存", style="Primary.TButton", command=save).grid(row=0, column=1)
 
     def _build_zones(self) -> None:
         for index, (key, title) in enumerate(ZONES, start=1):
@@ -339,6 +440,14 @@ class InsightFlowApp(tk.Tk):
             wraplength=300,
             justify="left",
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        ttk.Label(
+            actions,
+            textvariable=self._llm_var,
+            style="Hint.TLabel",
+            wraplength=300,
+            justify="left",
+        ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         # Column 3: alerts (FR-5.2 / 5.3 / 5.4).
         alerts = ttk.Frame(body)
@@ -761,6 +870,13 @@ class InsightFlowApp(tk.Tk):
                     self._status_var.set("预览完成（未生成报告）")
                 else:
                     self.summary = result if isinstance(result, dict) else None
+                    self._llm_var.set(services.llm_result_text(self.summary))
+                    if (self.summary or {}).get("llm_warnings"):
+                        messagebox.showwarning(
+                            "LLM 增强已降级",
+                            "\n".join((self.summary or {}).get("llm_warnings") or []),
+                            parent=self,
+                        )
                     self._progress["value"] = services.STAGE_TOTAL if (self.summary or {}).get("status") == "success" else 0
                     self._stage_var.set(self._stage_text(self.summary))
                     self._update_result_buttons()
