@@ -24,7 +24,7 @@ from .scheduler import (
     remove_windows_task,
     run_daemon,
 )
-from .semantic_assembly import build_plan_provider, build_semantic_provider
+from .semantic_assembly import build_execution_provider, build_plan_provider, build_semantic_provider
 from .utils import jsonable
 
 
@@ -65,6 +65,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "llm"],
         default="none",
         help="分析计划提供者：none=规则（默认）；llm=旁路生成计划，失败自动降级规则计划",
+    )
+    run.add_argument(
+        "--execute",
+        choices=["none", "llm"],
+        default="none",
+        help="受控执行：none=只算规则（默认）；llm=生成代码并在沙箱执行，失败自动降级规则结果",
     )
 
     scan = subparsers.add_parser("scan", parents=[common], help="只扫描与预览，不生成报告")
@@ -157,6 +163,26 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001
             _error(f"计划需要语义 Schema，但语义提供者不可用：{exc}")
 
+    execution_provider = None
+    execute_kind = getattr(args, "execute", "none")
+    if execute_kind and execute_kind != "none":
+        try:
+            execution_provider = build_execution_provider(execute_kind)
+        except Exception as exc:  # noqa: BLE001
+            _error(f"执行提供者不可用，已降级为规则结果：{exc}")
+        if execution_provider is not None:
+            # Execution depends on the plan (metric/dimension) and semantics.
+            if plan_provider is None:
+                try:
+                    plan_provider = build_plan_provider("llm")
+                except Exception as exc:  # noqa: BLE001
+                    _error(f"执行需要计划，但计划提供者不可用：{exc}")
+            if provider is None and plan_provider is not None:
+                try:
+                    provider = build_semantic_provider("llm")
+                except Exception as exc:  # noqa: BLE001
+                    _error(f"执行需要语义 Schema，但语义提供者不可用：{exc}")
+
     record = execute(
         settings,
         target_date=args.date,
@@ -165,6 +191,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         source_dir=args.source,
         semantic_provider=provider,
         plan_provider=plan_provider,
+        execution_provider=execution_provider,
     )
     if args.json:
         print(json.dumps(jsonable(record), ensure_ascii=False, indent=2))

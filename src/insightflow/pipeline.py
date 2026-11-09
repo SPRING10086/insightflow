@@ -40,10 +40,20 @@ from .normalize import PeriodExtraction, extract_periods, unit_mix_issues
 from .planner import build_plan, effective_fields
 from .readers import read_sources
 from .report import ReportError, render_report
+from .execution import (
+    EXECUTION_VERSION,
+    CodeArtifact,
+    ExecutionResult,
+    ExecutionSpec,
+    reconcile,
+    rule_execute,
+    save_execution_artifacts,
+)
 from .schema import detect_schema
 from .planning import PLAN_VERSION, PlanArtifact, plan_diff, rule_plan_artifact, save_plan_artifacts
 from .semantic import (
     ARTIFACT_VERSION,
+    FieldSemantics,
     SemanticArtifact,
     TableSample,
     TableSemantics,
@@ -142,6 +152,7 @@ def execute(
     on_step: Callable[[str, str], None] | None = None,
     semantic_provider: Any | None = None,
     plan_provider: Any | None = None,
+    execution_provider: Any | None = None,
 ) -> RunRecord:
     """Run the full pipeline once and always return a structured record.
 
@@ -409,6 +420,28 @@ def execute(
             f"生成 {len(result.kpis)} 个 KPI、{len(result.insights)} 条结论、{len(result.charts)} 个图表。",
         )
 
+        # 7.5) Optional controlled execution (dual-track; never drives the report).
+        execution_bundle: dict[str, Any] | None = None
+        if execution_provider is not None and plan.primary_metric:
+            step_start = time.perf_counter()
+            execution_bundle = _build_execution_bundle(
+                execution_provider,
+                cleaned,
+                analysis_fields,
+                plan,
+                semantic_bundle,
+                record,
+                logger,
+            )
+            result_llm = execution_bundle["llm"]
+            _add_step(
+                record,
+                "受控执行（旁路）",
+                step_start,
+                f"来源={result_llm.source_kind}；对账{'通过' if execution_bundle['diff']['accepted'] else '未通过'}；"
+                f"成本 {result_llm.cost_cny:.4f} 元。",
+            )
+
         # 8) Artifacts + report
         step_start = time.perf_counter()
         day_dir = ensure_dir(settings.output_dir / target.isoformat())
@@ -417,6 +450,8 @@ def execute(
             _persist_semantic(day_dir, semantic_bundle, record)
         if plan_bundle is not None:
             _persist_plans(day_dir, plan_bundle, record)
+        if execution_bundle is not None:
+            _persist_execution(day_dir, execution_bundle, record)
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))
@@ -694,6 +729,85 @@ def _persist_plans(day_dir: Path, bundle: dict[str, Any], record: RunRecord) -> 
         "charts_jaccard": diff["charts"]["jaccard"],
         "cost_cny": round(artifact.cost_cny, 6),
         "latency_ms": artifact.latency_ms,
+        "files": [path.name for path in written],
+    }
+
+
+def _build_execution_bundle(
+    provider: Any,
+    frame: Any,
+    fields: dict[str, Any],
+    plan: Any,
+    semantic_bundle: dict[str, Any] | None,
+    record: RunRecord,
+    logger: logging.Logger,
+) -> dict[str, Any]:
+    metric_field = fields.get(getattr(plan, "primary_metric", "") or "")
+    if metric_field is None:
+        raise PipelineError("受控执行缺少主指标字段")
+    dimension = fields.get(getattr(plan, "primary_dimension", "") or "")
+    # The cleaned frame is keyed by canonical names (revenue, orders...), so the
+    # execution spec and the generated code must use those, not the raw headers.
+    spec = ExecutionSpec(
+        table="dataset",
+        metric=getattr(plan, "primary_metric", "") or "",
+        metric_label=metric_field.label,
+        dimension=(getattr(plan, "primary_dimension", "") or "") if dimension else "",
+        dimension_label=dimension.label if dimension else "",
+    )
+    allowed = [str(column) for column in frame.columns if not str(column).startswith("__")]
+    rule = rule_execute(spec, frame)
+
+    semantic_fields = [
+        FieldSemantics(
+            name=key,
+            role=item.kind if item.kind in {"dimension", "metric", "date", "id"} else "text",
+            unit=item.unit,
+            meaning=item.label,
+            confidence=1.0,
+            source="cleaned",
+        )
+        for key, item in fields.items()
+        if key in allowed
+    ]
+
+    try:
+        result = provider.execute(spec, frame, allowed, semantic_fields)
+    except Exception as exc:  # noqa: BLE001 - every failure degrades, never aborts
+        message = f"{type(exc).__name__}: {exc}"
+        record.warnings.append(f"[execution_fallback] {message}")
+        logger.warning("execution fallback: %s", message)
+        result = ExecutionResult(
+            metrics=dict(rule.metrics),
+            groups=rule.groups,
+            source_kind="fallback",
+            memory_guard="none",
+            error=message[:300],
+        )
+    return {
+        "spec": spec,
+        "rule": rule,
+        "code": getattr(provider, "last_code", None),
+        "llm": result,
+        "diff": reconcile(rule, result),
+    }
+
+
+def _persist_execution(day_dir: Path, bundle: dict[str, Any], record: RunRecord) -> None:
+    written = save_execution_artifacts(
+        day_dir, bundle["spec"], bundle["rule"], bundle["code"], bundle["llm"], bundle["diff"]
+    )
+    result = bundle["llm"]
+    diff = bundle["diff"]
+    record.metadata["execution"] = {
+        "source_kind": result.source_kind,
+        "memory_guard": result.memory_guard,
+        "accepted": bool(diff["accepted"]),
+        "problems": list(diff["problems"]),
+        "total_rule": diff["total_rule"],
+        "total_llm": diff["total_llm"],
+        "cost_cny": round(result.cost_cny, 6),
+        "latency_ms": result.latency_ms,
         "files": [path.name for path in written],
     }
 

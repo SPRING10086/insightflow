@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.7-dev — LLM 阶段 3：受控执行
+
+- 新增 `execution.py`（ExecutionProvider 协议、规则基线、对账、四份产物）、
+  `llm/sandbox.py`（AST 白名单 + 子进程 + Job Object + 输出校验）、
+  `llm/sandbox_worker.py`、`llm/executor.py`、`prompts/execution_v1.md`。
+- **LLM 只生成 pandas 代码，数字由本地沙箱执行**；AST 拒绝 import/dunder/open/exec/loop，
+  字段引用必须命中真实列；`--execute llm` 缺省自动补建语义与计划。
+- 两阶段内存限额（先导入 pandas 再施加 512MB Job），超时 taskkill 杀进程树；
+  输入 >20 万行执行前降级，不截断。
+- 对账：total 1e-6、分组 1e-4、分组键集合必须一致；对不上不采信。
+- 7 类故障注入全部被拦/安全降级；3 个验收样本 + 真实 2018 上海 300 行执行成功且对账通过。
+- 测试 224 项。详见 [docs/llm-stage3-notes.md](docs/llm-stage3-notes.md)。
+
 ## 1.0.6-dev — LLM 阶段 2 复核修正：语义输入绕开规则过滤
 
 - **关键修正**：语义采样改为使用**原始表全列**（此前取自规则 `schema.fields`，高基数文本占满维度名额，

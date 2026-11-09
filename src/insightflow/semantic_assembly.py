@@ -46,6 +46,31 @@ def build_semantic_provider(
     )
 
 
+def build_execution_provider(
+    kind: str | None = "none",
+    *,
+    env: Mapping[str, str] | None = None,
+    transport: Any | None = None,
+    batch_budget_cny: float = 20.0,
+    timeout_seconds: float = 10.0,
+    memory_mb: int = 512,
+) -> Any | None:
+    """Build a stage-3 execution provider; ``none`` disables controlled execution."""
+    if not _token(kind, "执行"):
+        return None
+
+    from .llm.client import LLMConfig
+    from .llm.executor import LLMExecutionProvider
+
+    return LLMExecutionProvider(
+        LLMConfig.from_env(env),
+        transport=transport,
+        batch_budget_cny=batch_budget_cny,
+        timeout_seconds=timeout_seconds,
+        memory_mb=memory_mb,
+    )
+
+
 def build_plan_provider(
     kind: str | None = "none",
     *,

@@ -1,0 +1,69 @@
+{
+  "generated_at": "2026-11-09T20:27:44",
+  "rows": [
+    {
+      "sample": "01_主样本_干净",
+      "status": "success",
+      "source_kind": "llm",
+      "accepted": true,
+      "problems": [],
+      "total_rule": 125200.0,
+      "total_llm": 125200.0,
+      "group_keys_rule": 5,
+      "group_keys_llm": 5,
+      "memory_guard": "job",
+      "code_cost_cny": 0.003254,
+      "code_latency_ms": 1071,
+      "code": "s = df.groupby(\"region\")[\"revenue\"].sum().sort_values(ascending=False).head(50)\nresult = {\"metrics\": {\"total\": float(df[\"revenue\"].sum())}, \"groups\": {\"columns\": [\"region\"], \"rows\": [[str(k), float(v)] for k, v in s.items()]}}",
+      "error": ""
+    },
+    {
+      "sample": "02_边界样本_含问题",
+      "status": "success",
+      "source_kind": "llm",
+      "accepted": true,
+      "problems": [],
+      "total_rule": 50500.0,
+      "total_llm": 50500.0,
+      "group_keys_rule": 3,
+      "group_keys_llm": 3,
+      "memory_guard": "job",
+      "code_cost_cny": 0.002892,
+      "code_latency_ms": 1403,
+      "code": "df['revenue'] = df['revenue'].astype(float)\ntotal = float(df['revenue'].sum())\ng = df.groupby('region')['revenue'].sum().sort_values(ascending=False).head(50)\nrows = [[str(k), float(v)] for k, v in g.items()]\nresult = {\"metrics\": {\"total\": total}, \"groups\": {\"columns\": [\"region\"], \"rows\": rows}}",
+      "error": ""
+    },
+    {
+      "sample": "03_工商登记_合成样本",
+      "status": "success",
+      "source_kind": "llm",
+      "accepted": true,
+      "problems": [],
+      "total_rule": 125977.0,
+      "total_llm": 125977.0,
+      "group_keys_rule": 11,
+      "group_keys_llm": 11,
+      "memory_guard": "job",
+      "code_cost_cny": 0.004246,
+      "code_latency_ms": 1256,
+      "code": "s = df.groupby('dim_item-f9272bcb61')['revenue'].sum().sort_values(ascending=False).head(50)\nresult = {\"metrics\": {\"total\": float(df['revenue'].sum())}, \"groups\": {\"columns\": ['dim_item-f9272bcb61'], \"rows\": [[str(k), float(v)] for k, v in s.items()]}}",
+      "error": ""
+    },
+    {
+      "sample": "real_2018_上海(前300行)",
+      "status": "success",
+      "source_kind": "llm",
+      "accepted": true,
+      "problems": [],
+      "total_rule": 22700000.0,
+      "total_llm": 22700000.0,
+      "group_keys_rule": 2,
+      "group_keys_llm": 2,
+      "memory_guard": "job",
+      "code_cost_cny": 0.003414,
+      "code_latency_ms": 1039,
+      "code": "s = pd.to_numeric(df['metric_item-81e006d99d'], errors='coerce')\ntotal = float(s.sum())\ng = s.groupby(df['dim_item-6c7c7a4fde'].astype(str)).sum().sort_values(ascending=False).head(50)\nresult = {'metrics': {'total': total}, 'groups': {'columns': ['dim_item-6c7c7a4fde'], 'rows': [[str(k), float(v)] for k, v in g.items()]}}",
+      "error": ""
+    }
+  ]
+}
