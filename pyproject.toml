@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insightflow"
-version = "1.0.0"
+version = "1.0.2"
 description = "Offline-first, scheduled data profiling, cleaning, analysis and single-file HTML reporting pipeline."
 readme = "README.md"
 requires-python = ">=3.10"

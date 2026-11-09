@@ -5,5 +5,5 @@ network calls.  A run reads local spreadsheets, produces deterministic
 metrics and renders a self-contained HTML report with ECharts inlined.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 __app_name__ = "InsightFlow"

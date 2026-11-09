@@ -1,6 +1,6 @@
 {
   "app_name": "InsightFlow",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "timezone": "Asia/Shanghai",
   "source_dir": "examples/raw",
   "output_dir": "output",

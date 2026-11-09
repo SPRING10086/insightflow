@@ -17,7 +17,7 @@ from typing import Any
 
 from .utils import ensure_dir, read_json
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.2"
 
 _DEFAULTS: dict[str, Any] = {
     "app_name": "InsightFlow",
