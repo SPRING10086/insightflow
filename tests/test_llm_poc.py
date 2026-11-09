@@ -271,7 +271,9 @@ class ClientTests(unittest.TestCase):
         old_cwd = os.getcwd()
         os.chdir(tmp)
         try:
-            config = LLMConfig.from_env(None)
+            from unittest.mock import patch
+            with patch("insightflow.llm.client.dotenv_candidates", return_value=[tmp / ".env"]):
+                config = LLMConfig.from_env(None)
         finally:
             os.chdir(old_cwd)
         self.assertEqual(config.model, "dotenv-model")
@@ -293,7 +295,8 @@ class ClientTests(unittest.TestCase):
         old_cwd = os.getcwd()
         os.chdir(tmp)
         try:
-            with patch.dict(os.environ, {"INSIGHTFLOW_LLM_MODEL": "from-real-env"}, clear=False):
+            with patch("insightflow.llm.client.dotenv_candidates", return_value=[tmp / ".env"]), \
+                 patch.dict(os.environ, {"INSIGHTFLOW_LLM_MODEL": "from-real-env"}, clear=False):
                 config = LLMConfig.from_env(None)
         finally:
             os.chdir(old_cwd)

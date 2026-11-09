@@ -58,6 +58,11 @@ def load_dotenv(path: str | os.PathLike[str]) -> dict[str, str]:
     return values
 
 
+def dotenv_candidates() -> list[Path]:
+    """Local .env files probed in load order; extracted so tests can isolate it."""
+    return [Path.cwd() / ".env", Path(__file__).resolve().parents[3] / ".env"]
+
+
 @dataclass
 class LLMConfig:
     model: str
@@ -76,7 +81,7 @@ class LLMConfig:
     def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMConfig":
         if env is None:
             merged: dict[str, str] = {}
-            for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parents[3] / ".env"):
+            for candidate in dotenv_candidates():
                 merged.update(load_dotenv(candidate))
             # A real environment variable always wins over a local .env file.
             merged.update(os.environ)
@@ -204,7 +209,7 @@ class DeepSeekClient:
         )
 
     def _endpoint(self) -> str:
-        return self.config.base_url.rstrip("/")
+        return self.config.base_url.rstrip("/") + CHAT_PATH
 
     def complete(self, messages: list[dict[str, str]]) -> tuple[str, dict[str, int]]:
         payload = {
@@ -213,6 +218,9 @@ class DeepSeekClient:
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_output_tokens,
             "response_format": {"type": "json_object"},
+            # 结构化规划无需深度推理；Flash 默认开启思考会额外产生推理 token，
+            # 这里显式关闭以控制成本与延迟（参数见官方思考模式文档）
+            "thinking": {"type": "disabled"},
             "stream": False,
         }
         headers = {
