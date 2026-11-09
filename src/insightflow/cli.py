@@ -24,7 +24,12 @@ from .scheduler import (
     remove_windows_task,
     run_daemon,
 )
-from .semantic_assembly import build_execution_provider, build_plan_provider, build_semantic_provider
+from .semantic_assembly import (
+    build_execution_provider,
+    build_narrative_provider,
+    build_plan_provider,
+    build_semantic_provider,
+)
 from .utils import jsonable
 
 
@@ -71,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "llm"],
         default="none",
         help="受控执行：none=只算规则（默认）；llm=生成代码并在沙箱执行，失败自动降级规则结果",
+    )
+    run.add_argument(
+        "--narrative",
+        choices=["none", "llm"],
+        default="none",
+        help="叙事：none=仅规则洞察（默认）；llm=生成转义后的智能解读，失败自动回退规则洞察",
     )
 
     scan = subparsers.add_parser("scan", parents=[common], help="只扫描与预览，不生成报告")
@@ -183,6 +194,14 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
                 except Exception as exc:  # noqa: BLE001
                     _error(f"执行需要语义 Schema，但语义提供者不可用：{exc}")
 
+    narrative_provider = None
+    narrative_kind = getattr(args, "narrative", "none")
+    if narrative_kind and narrative_kind != "none":
+        try:
+            narrative_provider = build_narrative_provider(narrative_kind)
+        except Exception as exc:  # noqa: BLE001
+            _error(f"叙事提供者不可用，已回退规则洞察：{exc}")
+
     record = execute(
         settings,
         target_date=args.date,
@@ -192,6 +211,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         semantic_provider=provider,
         plan_provider=plan_provider,
         execution_provider=execution_provider,
+        narrative_provider=narrative_provider,
     )
     if args.json:
         print(json.dumps(jsonable(record), ensure_ascii=False, indent=2))

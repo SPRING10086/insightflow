@@ -71,6 +71,27 @@ def build_execution_provider(
     )
 
 
+def build_narrative_provider(
+    kind: str | None = "none",
+    *,
+    env: Mapping[str, str] | None = None,
+    transport: Any | None = None,
+    batch_budget_cny: float = 20.0,
+) -> Any | None:
+    """Build a stage-4 narrative provider; ``none`` keeps the rule insights only."""
+    if not _token(kind, "叙事"):
+        return None
+
+    from .llm.client import LLMConfig
+    from .llm.narrative_gen import LLMNarrativeProvider
+
+    return LLMNarrativeProvider(
+        LLMConfig.from_env(env),
+        transport=transport,
+        batch_budget_cny=batch_budget_cny,
+    )
+
+
 def build_plan_provider(
     kind: str | None = "none",
     *,

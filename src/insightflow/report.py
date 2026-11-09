@@ -67,6 +67,7 @@ def render_report(
     fields: dict[str, FieldSpec],
     settings: Settings,
     output_path: Path,
+    narrative: dict[str, Any] | None = None,
 ) -> Path:
     template_path = Path(__file__).resolve().parent / "templates" / "report.html"
     echarts_path = Path(__file__).resolve().parent / "assets" / "echarts.min.js"
@@ -154,6 +155,12 @@ def render_report(
     html = template
     for token, value in replacements.items():
         html = html.replace(token, value)
+
+    if narrative:
+        from .narrative import narrative_section
+
+        section = narrative_section(narrative)
+        html = html.replace('<main class="wrap">', '<main class="wrap">' + section, 1)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")

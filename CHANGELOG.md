@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.8-dev — LLM 阶段 4：可视化 HTML 叙事
+
+- 新增 `narrative.py`（叙事协议、事实映射、占位符校验/渲染、产物）与
+  `llm/narrative_gen.py`、`prompts/narrative_v1.md`；`report.render_report(..., narrative=None)` 插入独立“智能解读”区块。
+- 模型只写 `[[key]]` 占位符文字：裸数字（含中文量化）、未知/越权引用、标签/协议/实体一律拒绝；
+  字面量统一 `html.escape(quote=True)`，替换值白名单（数字/单位/中文/`¥`），渲染后校验无残留占位符、脚本数不变。
+- `--narrative none|llm`；默认关闭时报告零变化，任何失败回退规则洞察且 `status=success`。
+- 真实调用：3 验收样本 + 真实 2018 上海 300 行全部叙事成功（15–20 占位符、无残留、单次 ≈0.005 元）。
+- 测试 246 项。详见 [docs/llm-stage4-notes.md](docs/llm-stage4-notes.md)。
+
 ## 1.0.7-dev — LLM 阶段 3：受控执行
 
 - 新增 `execution.py`（ExecutionProvider 协议、规则基线、对账、四份产物）、

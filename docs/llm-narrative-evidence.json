@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-11-09T21:42:40",
+  "rows": [
+    {
+      "sample": "01_主样本_干净",
+      "status": "success",
+      "source_kind": "llm",
+      "reason": "",
+      "prompt_version": "narrative_v1",
+      "placeholders": 15,
+      "cost_cny": 0.004898,
+      "latency_ms": 3071,
+      "section_rendered": true,
+      "no_placeholder_left": true,
+      "title": "本期经营概览",
+      "summary": "本期[[kpi.revenue.label]]为[[kpi.revenue.value]][[kpi.revenue.unit]]，较上期变化[[kpi.revenue.delta_pct]]；[[kpi.records.label]]为[[kpi.records.value]][[kpi.records.unit]]，变化[[kpi.records.delta_pct]]。",
+      "rendered_summary": "本期销售额为¥125,200.00元，较上期变化—；有效记录为10行，变化—。"
+    },
+    {
+      "sample": "02_边界样本_含问题",
+      "status": "success",
+      "source_kind": "llm",
+      "reason": "",
+      "prompt_version": "narrative_v1",
+      "placeholders": 17,
+      "cost_cny": 0.003912,
+      "latency_ms": 2469,
+      "section_rendered": true,
+      "no_placeholder_left": true,
+      "title": "本期经营概览",
+      "summary": "本期[[kpi.revenue.label]]为[[kpi.revenue.value]][[kpi.revenue.unit]]，较上期变化[[kpi.revenue.delta_pct]]；[[kpi.records.label]]为[[kpi.records.value]][[kpi.records.unit]]，变化[[kpi.records.delta_pct]]。",
+      "rendered_summary": "本期销售额为¥50,500.00元，较上期变化—；有效记录为4行，变化—。"
+    },
+    {
+      "sample": "03_工商登记_合成样本",
+      "status": "success",
+      "source_kind": "llm",
+      "reason": "",
+      "prompt_version": "narrative_v1",
+      "placeholders": 20,
+      "cost_cny": 0.005896,
+      "latency_ms": 2804,
+      "section_rendered": true,
+      "no_placeholder_left": true,
+      "title": "本期经营概览",
+      "summary": "本期[[kpi.revenue.label]]为[[kpi.revenue.value]][[kpi.revenue.unit]]，较上期变化[[kpi.revenue.delta_pct]]；[[kpi.records.label]]为[[kpi.records.value]][[kpi.records.unit]]，变化[[kpi.records.delta_pct]]。",
+      "rendered_summary": "本期销售额为¥125,977.00元，较上期变化—；有效记录为11行，变化—。"
+    },
+    {
+      "sample": "real_2018_上海(前300行)",
+      "status": "success",
+      "source_kind": "llm",
+      "reason": "",
+      "prompt_version": "narrative_v1",
+      "placeholders": 17,
+      "cost_cny": 0.00467,
+      "latency_ms": 2512,
+      "section_rendered": true,
+      "no_placeholder_left": true,
+      "title": "本期经营概览",
+      "summary": "本期共覆盖 [[kpi.records.value]] [[kpi.records.unit]]记录，较上期变化 [[kpi.records.delta_pct]]，核心指标 [[kpi.metric_item-81e006d99d.label]] 为 [[kpi.metric_item-81e006d99d.value]]，变化 [[kpi.metric_item-81e006d99d.delta_pct]]。",
+      "rendered_summary": "本期共覆盖 6 行记录，较上期变化 —，核心指标 注册资金 为 22,700,000.00，变化 —。"
+    }
+  ]
+}

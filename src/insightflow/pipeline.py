@@ -37,6 +37,14 @@ from .models import (
     STATUS_SUCCESS,
 )
 from .normalize import PeriodExtraction, extract_periods, unit_mix_issues
+from .narrative import (
+    NarrativeDraft,
+    NarrativeError,
+    build_facts,
+    render_narrative,
+    save_narrative_artifacts,
+    validate_narrative,
+)
 from .planner import build_plan, effective_fields
 from .readers import read_sources
 from .report import ReportError, render_report
@@ -153,6 +161,7 @@ def execute(
     semantic_provider: Any | None = None,
     plan_provider: Any | None = None,
     execution_provider: Any | None = None,
+    narrative_provider: Any | None = None,
 ) -> RunRecord:
     """Run the full pipeline once and always return a structured record.
 
@@ -442,6 +451,32 @@ def execute(
                 f"成本 {result_llm.cost_cny:.4f} 元。",
             )
 
+        # 7.6) Optional LLM narrative (escaped text only; numbers locally rendered).
+        narrative_bundle: dict[str, Any] | None = None
+        if narrative_provider is not None:
+            step_start = time.perf_counter()
+            narrative_bundle = _build_narrative_bundle(
+                narrative_provider,
+                result,
+                plan,
+                cleaning_report,
+                analysis_fields,
+                cleaned,
+                record,
+                logger,
+            )
+            if narrative_bundle is not None:
+                rendered = narrative_bundle["rendered"]
+                _add_step(
+                    record,
+                    "叙事（旁路）",
+                    step_start,
+                    f"{len(rendered.get('key_points') or []) + 1} 段；占位符 {len(rendered.get('mapping') or {})} 处；"
+                    f"成本 {narrative_bundle['meta'].get('cost_cny', 0):.4f} 元。",
+                )
+            else:
+                _add_step(record, "叙事（旁路）", step_start, "已降级为规则洞察（原因见 metadata.narrative）")
+
         # 8) Artifacts + report
         step_start = time.perf_counter()
         day_dir = ensure_dir(settings.output_dir / target.isoformat())
@@ -452,6 +487,8 @@ def execute(
             _persist_plans(day_dir, plan_bundle, record)
         if execution_bundle is not None:
             _persist_execution(day_dir, execution_bundle, record)
+        if narrative_bundle is not None:
+            _persist_narrative(day_dir, narrative_bundle, record)
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))
@@ -464,6 +501,7 @@ def execute(
             fields=analysis_fields,
             settings=settings,
             output_path=report_path,
+            narrative=narrative_bundle["rendered"] if narrative_bundle else None,
         )
         latest_path = settings.output_dir / "latest.html"
         try:
@@ -808,6 +846,72 @@ def _persist_execution(day_dir: Path, bundle: dict[str, Any], record: RunRecord)
         "total_llm": diff["total_llm"],
         "cost_cny": round(result.cost_cny, 6),
         "latency_ms": result.latency_ms,
+        "files": [path.name for path in written],
+    }
+
+
+def _build_narrative_bundle(
+    provider: Any,
+    result: Any,
+    plan: Any,
+    cleaning: Any,
+    fields: dict[str, Any],
+    frame: Any,
+    record: RunRecord,
+    logger: logging.Logger,
+) -> dict[str, Any] | None:
+    facts = build_facts(result, plan, cleaning, fields)
+    chart_ids = [str(chart.chart_id) for chart in getattr(result, "charts", [])]
+    labels = [str(getattr(spec, "label", key)) for key, spec in fields.items()]
+    samples = [
+        {str(column): row.get(column) for column in frame.columns if not str(column).startswith("__")}
+        for row in frame.head(10).to_dict("records")
+    ]
+    try:
+        draft = provider.generate(sorted(facts), labels, chart_ids, samples)
+        validate_narrative(draft, facts, chart_ids)
+        rendered = render_narrative(draft, facts)
+    except Exception as exc:  # noqa: BLE001 - any failure falls back to rule insights
+        message = f"{type(exc).__name__}: {exc}"
+        record.warnings.append(f"[narrative_fallback] {message}")
+        logger.warning("narrative fallback: %s", message)
+        record.metadata["narrative"] = {
+            "source_kind": "fallback",
+            "reason": message[:300],
+            "prompt_version": str(getattr(provider, "prompt_version", "")),
+        }
+        return None
+
+    meta = dict(getattr(provider, "last_meta", {}) or {})
+    meta.setdefault("provider", str(getattr(provider, "name", "llm")))
+    meta.setdefault("prompt_version", str(getattr(provider, "prompt_version", "")))
+    return {
+        "facts": facts,
+        "draft": draft,
+        "rendered": rendered,
+        "rule": [{"title": item.title, "body": item.body} for item in result.insights],
+        "meta": meta,
+    }
+
+
+def _persist_narrative(day_dir: Path, bundle: dict[str, Any], record: RunRecord) -> None:
+    written = save_narrative_artifacts(
+        day_dir, bundle["facts"], bundle["draft"], bundle["rendered"], bundle["meta"]
+    )
+    rule_path = day_dir / "narrative_rule.json"
+    rule_path.write_text(
+        json.dumps({"schema_version": "1.0", "insights": bundle["rule"]}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    written.append(rule_path)
+    meta = bundle["meta"]
+    record.metadata["narrative"] = {
+        "source_kind": meta.get("source_kind", "llm"),
+        "provider": meta.get("provider", "llm"),
+        "prompt_version": meta.get("prompt_version", ""),
+        "cost_cny": round(float(meta.get("cost_cny") or 0), 6),
+        "latency_ms": int(meta.get("latency_ms") or 0),
+        "placeholders": len(bundle["rendered"].get("mapping") or {}),
         "files": [path.name for path in written],
     }
 
