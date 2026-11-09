@@ -233,8 +233,13 @@ customer_id, order_id, ...
 gui/__main__.py   入口：stderr 兜底、加载配置、DPI、启动门禁
 gui/app.py        主窗口：顶部状态条 + 四分区 + 底部工具条；after() 轮询消息
 gui/worker.py     单工作线程 + queue.Queue；4 种消息（started/progress/done/failed）
+gui/services.py   唯一允许 import 核心的 GUI 模块：预览、文件清单、锁状态、执行
 gui/envcheck.py   锁定环境比对（读 requirements.lock.txt，importlib.metadata 取版本）
 ```
+
+进度观察：`pipeline.execute(..., on_step=...)` 是默认关闭的钩子（`ContextVar` 传递，
+观察者异常被吞掉），GUI 用它把核心步骤映射成 读取 → 清洗 → 分析 → 出报告 四段；
+CLI 与计划任务不传该参数，行为逐字节不变。
 
 硬规则：
 

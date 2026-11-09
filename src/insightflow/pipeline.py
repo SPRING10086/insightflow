@@ -13,9 +13,10 @@ import os
 import shutil
 import time
 import warnings
+from contextvars import ContextVar
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -54,6 +55,15 @@ from .utils import (
 
 class PipelineError(RuntimeError):
     """Raised for a user-actionable pipeline failure."""
+
+
+#: Optional observer of pipeline steps, used by the desktop shell to show live
+#: stage progress.  It is a ContextVar so no step call site has to thread a
+#: parameter through, and the default ``None`` keeps CLI and scheduled runs
+#: byte-for-byte unchanged.
+_STEP_OBSERVER: ContextVar[Callable[[str, str], None] | None] = ContextVar(
+    "insightflow_step_observer", default=None
+)
 
 
 class _RunLock:
@@ -118,8 +128,15 @@ def execute(
     force: bool = False,
     now: datetime | None = None,
     source_dir: Path | str | None = None,
+    on_step: Callable[[str, str], None] | None = None,
 ) -> RunRecord:
-    """Run the full pipeline once and always return a structured record."""
+    """Run the full pipeline once and always return a structured record.
+
+    ``on_step`` is an optional observer called as ``on_step(name, detail)`` after
+    each internal step finishes; the desktop shell uses it for live progress.
+    It must never influence the run: exceptions raised by an observer are
+    swallowed, and ``None`` (the default) means zero behaviour change.
+    """
     settings = settings or load_settings()
     settings.ensure_runtime_dirs()
     logger = configure_logging(settings)
@@ -150,6 +167,7 @@ def execute(
 
     state: dict[str, Any] = {}
     read_result: ReadResult | None = None
+    observer_token = _STEP_OBSERVER.set(on_step)
     try:
         target = _resolve_target_date(settings, target_date, started_at)
         baseline = settings.baseline_date(target)
@@ -398,6 +416,7 @@ def execute(
         logger.exception("run %s failed", run_id)
         return record
     finally:
+        _STEP_OBSERVER.reset(observer_token)
         try:
             if read_result is not None:
                 record.files = [jsonable(report) for report in read_result.file_reports]
@@ -593,6 +612,12 @@ def _add_step(record: RunRecord, name: str, started: float, detail: str, status:
             "duration_ms": int((time.perf_counter() - started) * 1000),
         }
     )
+    observer = _STEP_OBSERVER.get()
+    if observer is not None:
+        try:
+            observer(name, detail)
+        except Exception:  # noqa: BLE001 - an observer must never break a run
+            pass
 
 
 def _merge_warnings(record: RunRecord, warnings: list[str]) -> None:

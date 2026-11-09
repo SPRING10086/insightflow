@@ -68,3 +68,83 @@ OK          （原 50 条 + 重构回归 5 条）
 | 2 | 运行控制：目标日期选择、开始分析（后台线程 + `execute()`）、四阶段进度、运行中禁用与锁检测 | FR-2.1 – 2.4 |
 | 3 | 结果获取：打开 `cleaned_data.csv`、打开报告/所在文件夹、无结果时禁用并说明 | FR-3.1 – 3.3 |
 | 4 | 质量与历史（阶段 2 起）：质量分、五类告警、历史记录 | FR-5.x / FR-6.1 |
+
+---
+
+# 第 1–3 步：主流程 MVP（放数据 → 运行 → 取报告）
+
+## 2.1 交付内容
+
+| 区块 | 做了什么 | 对应 FR |
+|---|---|---|
+| ① 数据导入 | 「放入待分析数据」打开 `source_dir`（不存在则先创建）；「刷新清单」重扫；清单显示 **文件名/类型/大小/修改时间/状态**；`.txt` 等标灰并写「不支持的类型」；空目录时状态栏提示且禁用「开始分析」 | FR-1.1 / 1.2 / 1.3 / 1.6 |
+| ② 运行控制 | 目标日期（默认昨天，`◀ ▶` 按天微调，格式非法弹窗）；「开始分析」在后台线程调 `execute()`；进度条 + 四阶段文案（读取 → 清洗 → 分析 → 出报告）+ 实时耗时；运行中禁用日期/刷新/打开目录；启动前检测 `.pipeline.lock`，已锁则提示「已有任务在执行」且不发车 | FR-2.1 / 2.2 / 2.3 / 2.4 |
+| ③ 结果获取 | 「获取清洗后数据」「获取数据报表」「报告所在文件夹」；仅在 `status=success` 且产物真实存在时启用，否则禁用并显示原因；运行后显示 目标日/行数/耗时/报告文件名 | FR-3.1 / 3.2 / 3.3 |
+
+验证截图（真实运行 `examples/raw`，目标日 2026-11-06）：
+
+![数据导入](images/gui-stage1-import.png)
+![运行结果](images/gui-stage1-result.png)
+
+## 2.2 为什么给核心加了 `on_step`（唯一的核心改动，6 行）
+
+FR-2.3 要求「阶段与实际状态一致」。`execute()` 原先只在 `RunRecord.steps` 里**事后**记录阶段，界面没有任何实时信息源，剩下只有两条歪路：按时间猜阶段（说谎）、或在 GUI 里复制一遍读取/清洗逻辑（违反不变量 1）。
+
+因此加了**默认关闭的观察点**：
+
+```python
+execute(..., on_step: Callable[[str, str], None] | None = None)
+```
+
+- 内部用 `ContextVar` 传递，7 个 `_add_step` 调用点一行都不用改；
+- 观察者抛异常会被吞掉，**观察者永远不能影响运行**；
+- 不传（CLI / 计划任务）时行为完全不变：`policy` 与黄金样本测试均未受影响（63 条全绿，含第 0 步的文本/JSON 逐字节用例）。
+
+`gui/services.py` 再把核心阶段名映射成操作员的四段：
+
+| 核心步骤 | 界面阶段 |
+|---|---|
+| 扫描数据源 / 读取与解析 / 字段识别与日期筛选 | ① 读取数据 |
+| 数据清洗 | ② 清洗与去重 |
+| 生成分析计划 / 指标计算 | ③ 分析与计划 |
+| 渲染离线报告 | ④ 生成报告 |
+
+## 2.3 分层落点
+
+```text
+app.py / worker.py      → 只 import 标准库、config(Settings)、envcheck、worker、gui.services
+gui/services.py         → 唯一 import 核心（pipeline.execute、utils）的 GUI 模块
+                        → 只返回纯 dict，RunRecord 不出服务层
+```
+
+实测：`app.py`/`worker.py` 对 `pipeline|readers|analysis|report|discovery|schema|normalize|pandas` 的 import **0 处**。
+
+## 2.4 验证
+
+```text
+$env:PYTHONPATH="src"; python -m unittest tests.test_gui_stage1 -v
+Ran 8 tests in 9.311s
+OK
+
+$env:PYTHONPATH="src"; python -m unittest discover -s tests
+Ran 63 tests in 22.061s
+OK          （50 + 5 重构 + 8 阶段 1）
+```
+
+| 检查 | 方式 | 结果 |
+|---|---|---|
+| 文件清单与核心发现一致 | 用例断言 GUI 的 supported 集合 == `discover_files()` | 通过 |
+| 不支持类型不崩、标灰 | `notes.txt` → 「不支持的类型」 | 通过 |
+| 空目录禁止空跑 | 清单 0 行 → 开始分析禁用 + 「数据源为空」提示 | 通过 |
+| 锁检测 | 新鲜锁 → `locked=True`；200 分钟前 → `stale=True, locked=False`；与 `pipeline._RunLock.stale_seconds` 同源断言 | 通过 |
+| 四阶段真实推进 | `run_analysis(on_stage=...)` 收到 1→2→3→4 | 通过 |
+| 端到端跑通 | 窗口内点「开始分析」→ `status=success`、清洗后 2 行、结果按钮启用 | 通过 |
+| 无目标日 | `status=no_data`，结果按钮禁用并给出原因 | 通过 |
+
+## 2.5 已知取舍（本阶段有意不做）
+
+- **不可中途取消**：`execute()` 是同步事务，取消需要核心支持事务回滚；阶段 1 DoD 只要求「不卡界面、可看进度」，已满足。关窗时会二次确认并等待线程退出，不会留半成品。
+- **不做「强制重算」与「只预览」**：FR-2.5 / 2.6 属 P1（阶段 3）；`services.run_analysis(force=...)` 与 `services.preview` 已就位，接界面即可。
+- **数据导入的拖拽与单文件移除**：FR-1.4 / 1.5 属 P1（阶段 3）。
+- 质量分、五类告警、历史记录属阶段 2。
+
