@@ -251,6 +251,54 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(config.model, "measured-model-name")
         self.assertEqual(config.price_out_cny_per_mtok, 8.0)
 
+    def test_dotenv_is_loaded_when_environment_is_absent(self):
+        import os
+        import tempfile
+
+        tmp = Path(tempfile.mkdtemp(prefix="insightflow-test-", dir=str(ROOT / "tests")))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        (tmp / ".env").write_text(
+            "# comment\n"
+            "INSIGHTFLOW_LLM_MODEL=dotenv-model\n"
+            "DEEPSEEK_API_KEY='dotenv-key'\n"
+            "INSIGHTFLOW_LLM_PRICE_IN=1.5\n"
+            "INSIGHTFLOW_LLM_PRICE_OUT=6\n",
+            encoding="utf-8",
+        )
+        keys = ("INSIGHTFLOW_LLM_MODEL", "DEEPSEEK_API_KEY", "INSIGHTFLOW_LLM_PRICE_IN", "INSIGHTFLOW_LLM_PRICE_OUT")
+        saved = {key: os.environ.pop(key, None) for key in keys}
+        self.addCleanup(lambda: [os.environ.__setitem__(k, v) for k, v in saved.items() if v is not None])
+        old_cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            config = LLMConfig.from_env(None)
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(config.model, "dotenv-model")
+        self.assertEqual(config.api_key, "dotenv-key")
+        self.assertEqual(config.price_in_cny_per_mtok, 1.5)
+
+    def test_real_environment_overrides_dotenv(self):
+        from unittest.mock import patch
+
+        tmp = Path(__import__("tempfile").mkdtemp(prefix="insightflow-test-", dir=str(ROOT / "tests")))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        (tmp / ".env").write_text(
+            "INSIGHTFLOW_LLM_MODEL=dotenv-model\nDEEPSEEK_API_KEY=k\n"
+            "INSIGHTFLOW_LLM_PRICE_IN=1\nINSIGHTFLOW_LLM_PRICE_OUT=1\n",
+            encoding="utf-8",
+        )
+        import os
+
+        old_cwd = os.getcwd()
+        os.chdir(tmp)
+        try:
+            with patch.dict(os.environ, {"INSIGHTFLOW_LLM_MODEL": "from-real-env"}, clear=False):
+                config = LLMConfig.from_env(None)
+        finally:
+            os.chdir(old_cwd)
+        self.assertEqual(config.model, "from-real-env")
+
 
 class EvaluateTests(unittest.TestCase):
     def test_role_accuracy(self):

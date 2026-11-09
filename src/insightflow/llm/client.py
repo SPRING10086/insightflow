@@ -16,6 +16,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Mapping
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
@@ -35,6 +36,28 @@ class CostLimitExceeded(RuntimeError):
     """The per-table cost guard tripped."""
 
 
+def load_dotenv(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Minimal ``.env`` reader (KEY=VALUE, ``#`` comments, optional quotes)."""
+    file = Path(path)
+    if not file.is_file():
+        return {}
+    values: dict[str, str] = {}
+    try:
+        text = file.read_text(encoding="utf-8-sig")
+    except OSError:
+        return {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
+
+
 @dataclass
 class LLMConfig:
     model: str
@@ -51,7 +74,15 @@ class LLMConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMConfig":
-        source = os.environ if env is None else env
+        if env is None:
+            merged: dict[str, str] = {}
+            for candidate in (Path.cwd() / ".env", Path(__file__).resolve().parents[3] / ".env"):
+                merged.update(load_dotenv(candidate))
+            # A real environment variable always wins over a local .env file.
+            merged.update(os.environ)
+            source: Mapping[str, str] = merged
+        else:
+            source = env
 
         def get(name: str, default: str = "") -> str:
             return str(source.get(name, default) or "").strip()
