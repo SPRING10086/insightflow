@@ -15,9 +15,9 @@ import time
 import tkinter as tk
 from datetime import date, timedelta
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
-from ..config import Settings
+from ..config import Settings, load_settings
 from . import services
 from .envcheck import COLOUR_BAD, EnvStatus, banner, check_environment, gate_message
 from .worker import MSG_DONE, MSG_FAILED, MSG_PROGRESS, MSG_STARTED, BackgroundWorker, Progress
@@ -65,6 +65,8 @@ class InsightFlowApp(tk.Tk):
         self._date_order_var = tk.StringVar(value=settings.date_order)
         self._result_var = tk.StringVar(value=services.result_caption(None))
         self._elapsed_var = tk.StringVar(value="")
+        self._force_var = tk.BooleanVar(value=False)
+        self._schedule_var = tk.StringVar(value="定时任务：查询中…")
         self._score_grade_var = tk.StringVar(value="未运行")
         self._score_detail_var = tk.StringVar(value="")
         self._coverage_var = tk.StringVar(value="")
@@ -88,6 +90,7 @@ class InsightFlowApp(tk.Tk):
         self.refresh_files()
         self._render_quality(None)
         self.refresh_history()
+        self._refresh_schedule()
 
     # -- construction ------------------------------------------------------
 
@@ -182,9 +185,14 @@ class InsightFlowApp(tk.Tk):
 
         self._folder_btn = ttk.Button(bar, text="放入待分析数据", command=self._open_source_dir)
         self._folder_btn.grid(row=0, column=0, sticky="w")
+        self._choose_btn = ttk.Button(bar, text="选择文件…", command=self._choose_files)
+        self._choose_btn.grid(row=0, column=1, sticky="w", padx=(6, 0))
         self._refresh_btn = ttk.Button(bar, text="刷新清单", command=self.refresh_files)
-        self._refresh_btn.grid(row=0, column=1, sticky="w", padx=(6, 10))
-        ttk.Label(bar, textvariable=self._files_var, style="Hint.TLabel").grid(row=0, column=2, sticky="w")
+        self._refresh_btn.grid(row=0, column=2, sticky="w", padx=(6, 0))
+        self._remove_btn = ttk.Button(bar, text="移除所选", command=self._remove_selected)
+        self._remove_btn.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        ttk.Label(bar, textvariable=self._files_var, style="Hint.TLabel").grid(row=0, column=4, sticky="w", padx=(10, 0))
+        bar.columnconfigure(4, weight=1)
 
         table = ttk.Frame(parent)
         table.grid(row=2, column=0, sticky="nsew")
@@ -214,7 +222,6 @@ class InsightFlowApp(tk.Tk):
     def _build_run(self, parent: ttk.LabelFrame) -> None:
         row = ttk.Frame(parent)
         row.grid(row=1, column=0, sticky="ew", pady=(4, 2))
-        row.columnconfigure(6, weight=1)
 
         ttk.Label(row, text="目标日期").grid(row=0, column=0, sticky="w")
         self._date_entry = ttk.Entry(row, textvariable=self._date_var, width=12)
@@ -233,8 +240,12 @@ class InsightFlowApp(tk.Tk):
         )
         self._start_btn.grid(row=0, column=5, sticky="w")
 
+        self._preview_btn = ttk.Button(row, text="只预览", command=self._preview)
+        self._preview_btn.grid(row=0, column=6, sticky="w", padx=(6, 8))
+
         self._progress = ttk.Progressbar(row, mode="determinate", maximum=services.STAGE_TOTAL)
-        self._progress.grid(row=0, column=6, sticky="ew", padx=(12, 0))
+        self._progress.grid(row=0, column=7, sticky="ew", padx=(0, 0))
+        row.columnconfigure(7, weight=1)
 
         order = ttk.Frame(parent)
         order.grid(row=2, column=0, sticky="ew", pady=(2, 0))
@@ -251,6 +262,11 @@ class InsightFlowApp(tk.Tk):
             )
             button.grid(row=0, column=index, sticky="w", padx=(10, 0))
             self._order_buttons.append(button)
+        ttk.Checkbutton(
+            order,
+            text="强制重新分析（忽略数据指纹）",
+            variable=self._force_var,
+        ).grid(row=0, column=4, sticky="w", padx=(16, 0))
         ttk.Label(order, textvariable=self._elapsed_var, style="Hint.TLabel").grid(row=0, column=6, sticky="e")
 
         ttk.Label(
@@ -309,13 +325,20 @@ class InsightFlowApp(tk.Tk):
         self._report_btn.grid(row=0, column=1, sticky="w", padx=(4, 0))
         self._report_dir_btn = ttk.Button(actions, text="报告所在文件夹", command=self._open_report_dir)
         self._report_dir_btn.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+
+        self._more_btn = ttk.Menubutton(actions, text="更多产物")
+        self._artifacts_menu = tk.Menu(self._more_btn, tearoff=False)
+        self._more_btn.configure(menu=self._artifacts_menu)
+        self._more_btn.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self._more_btn.state(["disabled"])
+
         ttk.Label(
             actions,
             textvariable=self._result_var,
             style="Status.TLabel",
             wraplength=300,
             justify="left",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         # Column 3: alerts (FR-5.2 / 5.3 / 5.4).
         alerts = ttk.Frame(body)
@@ -367,7 +390,12 @@ class InsightFlowApp(tk.Tk):
         bar.grid(row=1, column=0, sticky="ew", pady=(4, 2))
         bar.columnconfigure(1, weight=1)
         ttk.Button(bar, text="刷新历史", command=self.refresh_history).grid(row=0, column=0, sticky="w")
-        ttk.Label(bar, textvariable=self._history_var, style="Hint.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self._history_open_btn = ttk.Button(bar, text="打开报告", command=self._open_history_selected)
+        self._history_open_btn.grid(row=0, column=1, sticky="w", padx=(6, 0))
+        self._history_rerun_btn = ttk.Button(bar, text="重跑所选", command=self._rerun_selected)
+        self._history_rerun_btn.grid(row=0, column=2, sticky="w", padx=(6, 0))
+        ttk.Label(bar, textvariable=self._history_var, style="Hint.TLabel").grid(row=0, column=3, sticky="w", padx=(10, 0))
+        bar.columnconfigure(3, weight=1)
 
         table = ttk.Frame(parent)
         table.grid(row=2, column=0, sticky="nsew")
@@ -402,12 +430,11 @@ class InsightFlowApp(tk.Tk):
         footer.columnconfigure(0, weight=1)
 
         ttk.Label(footer, textvariable=self._status_var, style="Status.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(footer, text="帮助", command=self._show_help).grid(row=0, column=1, padx=(0, 6))
-        ttk.Button(footer, text="打开日志目录", command=self._open_logs).grid(row=0, column=2, padx=(0, 6))
-
-        schedule_btn = ttk.Button(footer, text="定时设置（阶段 3）")
-        schedule_btn.state(["disabled"])
-        schedule_btn.grid(row=0, column=3)
+        ttk.Label(footer, textvariable=self._schedule_var, style="Hint.TLabel").grid(row=0, column=1, padx=(12, 10))
+        ttk.Button(footer, text="帮助", command=self._show_help).grid(row=0, column=2, padx=(0, 6))
+        ttk.Button(footer, text="打包日志", command=self._package_logs).grid(row=0, column=3, padx=(0, 6))
+        ttk.Button(footer, text="管理员设置", command=self._open_settings).grid(row=0, column=4, padx=(0, 6))
+        ttk.Button(footer, text="打开日志目录", command=self._open_logs).grid(row=0, column=5)
 
     # -- data loading ------------------------------------------------------
 
@@ -477,18 +504,41 @@ class InsightFlowApp(tk.Tk):
             self._history_var.set("暂无运行记录")
 
     def _open_history_report(self, _event: object = None) -> None:
+        self._open_history_selected()
+
+    def _selected_history(self) -> dict | None:
         selection = self._history_tree.selection()
         if not selection:
-            return
+            return None
         index = self._history_tree.index(selection[0])
         if index >= len(self._history_rows):
+            return None
+        return self._history_rows[index]
+
+    def _open_history_selected(self) -> None:
+        item = self._selected_history()
+        if item is None:
+            messagebox.showinfo("未选择记录", "请先在历史列表里选中一行。")
             return
-        item = self._history_rows[index]
         if not item["report_path"]:
             reason = item["failure_reason"] or "该次运行没有生成报告。"
             messagebox.showinfo("没有可打开的报告", f"{item['time']} · {item['status_label']}\n{reason}")
             return
         self._open_path(item["report_path"], "报告")
+
+    def _rerun_selected(self) -> None:
+        """FR-6.3: re-run a historical date (commonly after a failure)."""
+        item = self._selected_history()
+        if item is None:
+            messagebox.showinfo("未选择记录", "请先在历史列表里选中一行。")
+            return
+        target = item["target_date"]
+        if item["status"] != "success" and item["failure_reason"]:
+            messagebox.showinfo("上次失败原因", f"{item['time']} · {item['status_label']}\n{item['failure_reason']}")
+        if not messagebox.askyesno("重跑", f"用目标日期 {target} 重新运行一次分析？"):
+            return
+        self._date_var.set(target)
+        self._start_run()
 
     # -- date order (FR-4.1 / FR-4.2) -------------------------------------
 
@@ -554,12 +604,13 @@ class InsightFlowApp(tk.Tk):
         self._update_elapsed()
 
         settings = self.settings
+        force = bool(self._force_var.get())
 
         def task(progress: Progress) -> dict:
             return services.run_analysis(
                 settings,
                 target,
-                force=False,
+                force=force,
                 on_stage=lambda index, label: progress.stage(
                     label, current=index, total=services.STAGE_TOTAL
                 ),
@@ -568,8 +619,107 @@ class InsightFlowApp(tk.Tk):
         if not self.worker.submit(task, label="正在执行分析…"):
             self._set_busy(False)
 
+    # -- preview (FR-2.6) --------------------------------------------------
+
+    def _preview(self) -> None:
+        if self.worker.running:
+            return
+        try:
+            target = date.fromisoformat(self._date_var.get().strip())
+        except ValueError:
+            messagebox.showerror("日期格式不对", "目标日期请使用 YYYY-MM-DD 格式，例如 2026-11-07。")
+            return
+
+        self._set_busy(True)
+        self._stage_var.set("正在预览（只读取，不生成报告）…")
+        settings = self.settings
+
+        def task(progress: Progress) -> dict:
+            progress.stage("正在读取数据源（只预览）", current=1, total=1)
+            return {"preview": services.preview_source(settings, target)}
+
+        if not self.worker.submit(task, label="正在预览…"):
+            self._set_busy(False)
+
+    def _show_preview_dialog(self, preview: dict) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("只预览（不会生成报告）")
+        dialog.geometry("760x420")
+        dialog.transient(self)
+        body = ttk.Frame(dialog, padding=10)
+        body.pack(fill="both", expand=True)
+        text = tk.Text(body, wrap="word", height=18, font=(FONT_FAMILY, 9))
+        text.pack(fill="both", expand=True)
+        lines = [services.preview_caption(preview), ""]
+        for table in preview["tables"]:
+            lines.append(
+                f"{table['file']} / {table['sheet']}：共 {table['rows']} 行，"
+                f"目标日 {table['target_rows']}，基准日 {table['baseline_rows']}，日期列 {table['date_column']}"
+            )
+        for item in preview["file_errors"]:
+            lines.append(f"读取失败：{item['file']}：{item['error']}")
+        for warning in preview["warnings"][:10]:
+            lines.append(f"[{warning['code']}] {warning['message']}")
+        text.insert("1.0", "\n".join(lines))
+        text.configure(state="disabled")
+        ttk.Button(body, text="关闭", command=dialog.destroy).pack(anchor="e", pady=(8, 0))
+
+    # -- file management (FR-1.4 / FR-1.5) --------------------------------
+
+    def _choose_files(self) -> None:
+        paths = filedialog.askopenfilenames(
+            title="选择要分析的 Excel / CSV 文件",
+            filetypes=[("Excel / CSV", "*.xlsx *.xls *.csv"), ("所有文件", "*.*")],
+        )
+        if not paths:
+            return
+        try:
+            result = services.import_files(self.settings, list(paths))
+        except services.ServiceError as exc:
+            messagebox.showerror("导入失败", str(exc))
+            return
+        self.refresh_files()
+        parts = []
+        if result["imported"]:
+            parts.append(f"已复制 {len(result['imported'])} 个文件到数据源目录")
+        if result["skipped"]:
+            detail = "；".join(f"{item['name']}（{item['reason']}）" for item in result["skipped"][:3])
+            parts.append(f"跳过 {len(result['skipped'])} 个：{detail}")
+        self._status_var.set("；".join(parts) or "没有可导入的文件")
+
+    def _remove_selected(self) -> None:
+        selection = self._tree.selection()
+        if not selection:
+            messagebox.showinfo("未选择文件", "请先在清单里选中一个文件。")
+            return
+        relative = str(self._tree.item(selection[0], "values")[0])
+        if not messagebox.askyesno(
+            "移除文件",
+            f"将从数据源目录移除：\n{relative}\n\n"
+            "文件会被移动到 state/removed（可恢复），不会被永久删除。继续吗？",
+            icon="warning",
+        ):
+            return
+        try:
+            destination = services.remove_source_file(self.settings, relative)
+        except services.ServiceError as exc:
+            messagebox.showerror("移除失败", str(exc))
+            return
+        self.refresh_files()
+        self._status_var.set(f"已移除 {relative}（移入 {destination}）")
+
     def _set_busy(self, busy: bool) -> None:
-        widgets = [self._date_entry, self._prev_btn, self._next_btn, self._refresh_btn, self._folder_btn]
+        widgets = [
+            self._date_entry,
+            self._prev_btn,
+            self._next_btn,
+            self._refresh_btn,
+            self._folder_btn,
+            self._choose_btn,
+            self._remove_btn,
+            self._preview_btn,
+            self._more_btn,
+        ]
         widgets.extend(self._order_buttons)
         for widget in widgets:
             widget.state(["disabled"] if busy else ["!disabled"])
@@ -600,16 +750,24 @@ class InsightFlowApp(tk.Tk):
                     self._progress["value"] = current
                 self._stage_var.set(str(payload.get("text", "")))
             elif message.kind == MSG_DONE:
-                self.summary = message.payload.get("result") if isinstance(message.payload.get("result"), dict) else None
+                result = message.payload.get("result")
                 self._set_busy(False)
-                self._progress["value"] = services.STAGE_TOTAL if (self.summary or {}).get("status") == "success" else 0
-                self._stage_var.set(self._stage_text(self.summary))
                 self._elapsed_var.set("")
-                self._update_result_buttons()
-                self._render_quality((self.summary or {}).get("quality"))
-                self.refresh_files()
-                self.refresh_history()
-                self._status_var.set(f"空闲 · 最近一次运行：{(self.summary or {}).get('status_label', '—')}")
+                if isinstance(result, dict) and "preview" in result:
+                    preview = result["preview"]
+                    self._progress["value"] = 0
+                    self._stage_var.set(services.preview_caption(preview))
+                    self._show_preview_dialog(preview)
+                    self._status_var.set("预览完成（未生成报告）")
+                else:
+                    self.summary = result if isinstance(result, dict) else None
+                    self._progress["value"] = services.STAGE_TOTAL if (self.summary or {}).get("status") == "success" else 0
+                    self._stage_var.set(self._stage_text(self.summary))
+                    self._update_result_buttons()
+                    self._render_quality((self.summary or {}).get("quality"))
+                    self.refresh_files()
+                    self.refresh_history()
+                    self._status_var.set(f"空闲 · 最近一次运行：{(self.summary or {}).get('status_label', '—')}")
             elif message.kind == MSG_FAILED:
                 self._set_busy(False)
                 self._elapsed_var.set("")
@@ -684,6 +842,23 @@ class InsightFlowApp(tk.Tk):
             (self._report_dir_btn, bool(ok and (self.summary or {}).get("report_dir"))),
         ):
             widget.state(["!disabled"] if usable else ["disabled"])
+        self._refresh_artifacts_menu()
+
+    def _refresh_artifacts_menu(self) -> None:
+        """FR-3.4: metrics.json / analysis_plan.json / run_record.json …"""
+        menu = self._artifacts_menu
+        menu.delete(0, "end")
+        entries = services.artifact_entries(self.summary)
+        if not entries:
+            menu.add_command(label="（暂无产物）", state="disabled")
+            self._more_btn.state(["disabled"])
+            return
+        for entry in entries:
+            menu.add_command(
+                label=entry["label"],
+                command=lambda path=entry["path"], label=entry["label"]: self._open_path(path, label),
+            )
+        self._more_btn.state(["!disabled"])
 
     def _open_cleaned(self) -> None:
         self._open_from_summary("cleaned_path", "清洗数据")
@@ -708,6 +883,123 @@ class InsightFlowApp(tk.Tk):
             messagebox.showerror(f"无法打开{label}", f"{path}\n{services.friendly_error(exc)}")
 
     # -- misc --------------------------------------------------------------
+
+    # -- settings / schedule / logs (FR-4.3/4.4, 7.1, 8.1, 8.3) ----------
+
+    def _refresh_schedule(self) -> None:
+        try:
+            self._schedule_var.set(services.scheduler_caption(services.scheduler_status(self.settings)))
+        except Exception:  # noqa: BLE001 - a status query must never break the window
+            self._schedule_var.set("定时任务：状态未知")
+
+    def _open_settings(self) -> None:
+        paths = services.settings_paths(self.settings)
+        try:
+            status = services.scheduler_status(self.settings)
+        except Exception:  # noqa: BLE001
+            status = {"installed": False, "schedule_time": self.settings.schedule_time, "next_run": ""}
+
+        dialog = tk.Toplevel(self)
+        dialog.title("管理员设置")
+        dialog.geometry("720x340")
+        dialog.transient(self)
+        body = ttk.Frame(dialog, padding=12)
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(1, weight=1)
+
+        source_var = tk.StringVar(value=str(self.settings.source_dir))
+        output_var = tk.StringVar(value=str(self.settings.output_dir))
+        ttk.Label(body, text="数据源目录").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Entry(body, textvariable=source_var).grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Label(body, text="输出目录").grid(row=1, column=0, sticky="w", pady=4)
+        ttk.Entry(body, textvariable=output_var).grid(row=1, column=1, sticky="ew", pady=4)
+
+        info = "\n".join(
+            [
+                f"日志目录：{paths['日志目录']}",
+                f"状态目录：{paths['状态目录']}",
+                f"配置文件：{paths['配置文件']}",
+                services.scheduler_caption(status),
+            ]
+        )
+        ttk.Label(body, text=info, style="Hint.TLabel", wraplength=660, justify="left").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        )
+
+        buttons = ttk.Frame(body)
+        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(buttons, text="关闭", command=dialog.destroy).grid(row=0, column=0, padx=(0, 6))
+        ttk.Button(
+            buttons,
+            text="保存并生效",
+            style="Primary.TButton",
+            command=lambda: self._save_settings(source_var.get(), output_var.get(), dialog),
+        ).grid(row=0, column=1)
+
+    def _save_settings(self, source: str, output: str, dialog: tk.Toplevel | None = None) -> bool:
+        # FR-8.4: overwriting the configuration needs confirmation.
+        if not messagebox.askyesno("保存设置", "将把数据源 / 输出路径写入 config/config.json 并立即生效，继续吗？"):
+            return False
+        try:
+            path = services.save_paths(self.settings, source, output)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("保存失败", services.friendly_error(exc))
+            return False
+        self.settings = load_settings(project_root=self.settings.project_root)
+        self.refresh_files()
+        self._refresh_schedule()
+        self._status_var.set(f"设置已保存：{self._display_path(path)}")
+        if dialog is not None:
+            dialog.destroy()
+        return True
+
+    def _package_logs(self) -> None:
+        try:
+            path = services.package_logs(self.settings)
+        except services.ServiceError as exc:
+            messagebox.showerror("打包日志失败", str(exc))
+            return
+        if messagebox.askyesno("日志包已生成", f"{path}\n\n是否打开所在文件夹？"):
+            self._open_path(str(path.parent), "输出目录")
+
+    def _show_wizard(self) -> None:
+        """FR-8.1: first-run guide with a three-step flow."""
+        dialog = tk.Toplevel(self)
+        dialog.title("首次使用向导")
+        dialog.geometry("700x420")
+        dialog.transient(self)
+        body = ttk.Frame(dialog, padding=14)
+        body.pack(fill="both", expand=True)
+
+        text = tk.Text(body, wrap="word", height=15, relief="flat", font=(FONT_FAMILY, 10))
+        text.pack(fill="both", expand=True)
+        text.insert(
+            "1.0",
+            "三步完成一次分析\n\n"
+            "1. 点「放入待分析数据」：打开数据源目录，把 Excel / CSV 放进去；\n"
+            "   （也可以点「选择文件…」直接挑选文件，会自动复制到数据源目录）\n\n"
+            "2. 点「刷新清单」：确认文件出现在列表里，灰色的「不支持的类型」不会被分析。\n\n"
+            "3. 确认「目标日期」（默认昨天）和「日期口径」，点「开始分析」。\n\n"
+            "完成后：\n"
+            "• 「结果」区可打开清洗后数据、报告与更多产物（metrics / 分析计划）；\n"
+            "• 「质量分」与告警说明哪些数字含填补、哪些行是离群，引用前请先看一眼；\n"
+            "• 想先看看会读到什么，可以点「只预览」，不会生成报告。\n\n"
+            "遇到问题：点「打包日志」把日志发给我们。",
+        )
+        text.configure(state="disabled")
+
+        footer = ttk.Frame(body)
+        footer.pack(fill="x", pady=(8, 0))
+        keep = tk.BooleanVar(value=True)
+        ttk.Checkbutton(footer, text="不再显示这个向导", variable=keep).pack(side="left")
+        ttk.Button(
+            footer, text="知道了", command=lambda: self._close_wizard(dialog, keep)
+        ).pack(side="right")
+
+    def _close_wizard(self, dialog: tk.Toplevel, keep: tk.BooleanVar) -> None:
+        if bool(keep.get()):
+            services.mark_wizard_seen(self.settings)
+        dialog.destroy()
 
     def _open_source_dir(self) -> None:
         target = self.settings.source_dir
@@ -777,6 +1069,8 @@ class InsightFlowApp(tk.Tk):
             "_coverage_var",
             "_alert_summary_var",
             "_history_var",
+            "_schedule_var",
+            "_force_var",
             "_score_grade_var",
             "_score_detail_var",
         ):

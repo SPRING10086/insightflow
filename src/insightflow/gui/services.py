@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
+import sys
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -19,6 +21,7 @@ from typing import Any, Callable
 from ..config import Settings
 from ..logging_setup import read_run_history
 from ..pipeline import execute
+from ..services import preview as core_preview
 from ..utils import atomic_write_json, humanize_bytes, humanize_duration
 
 #: Mirrors ``pipeline._RunLock(stale_minutes=150)``; a test keeps them in sync.
@@ -573,3 +576,250 @@ def result_caption(summary: dict[str, Any] | None) -> str:
     label = summary.get("status_label") or summary.get("status")
     reason = summary.get("failure_reason") or RESULT_UNAVAILABLE.get(str(summary.get("status")), "")
     return f"结果：{label}" + (f" · {reason}" if reason else "")
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: file management, preview, artefacts, settings, logs
+# ---------------------------------------------------------------------------
+
+
+def remove_source_file(settings: Settings, relative_path: str) -> Path:
+    """Move one file out of the source folder into ``state/removed`` (FR-1.4).
+
+    Moving (instead of deleting) keeps a recoverable copy and avoids destroying
+    the operator's only copy of a file.
+    """
+    root = settings.source_dir.resolve()
+    target = (root / relative_path).resolve()
+    if target != root and root not in target.parents:
+        raise ServiceError("只能移除数据源目录内的文件。")
+    if not target.is_file():
+        raise ServiceError(f"文件不存在：{relative_path}")
+    removed_dir = settings.state_dir / "removed"
+    try:
+        removed_dir.mkdir(parents=True, exist_ok=True)
+        destination = removed_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{target.name}"
+        shutil.move(str(target), str(destination))
+    except OSError as exc:
+        raise ServiceError(friendly_error(exc)) from exc
+    return destination
+
+
+def import_files(settings: Settings, paths: list[str | Path]) -> dict[str, Any]:
+    """Copy chosen files into the source folder (FR-1.5 / 选择文件…)."""
+    root = settings.source_dir
+    allowed = {str(extension).lower() for extension in settings.include_extensions}
+    imported: list[str] = []
+    skipped: list[dict[str, str]] = []
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ServiceError(friendly_error(exc)) from exc
+
+    for raw in paths:
+        source = Path(raw).expanduser()
+        if not source.is_file():
+            skipped.append({"name": source.name, "reason": "文件不存在"})
+            continue
+        if source.suffix.lower() not in allowed:
+            skipped.append({"name": source.name, "reason": "不支持的类型"})
+            continue
+        destination = root / source.name
+        if destination.exists():
+            skipped.append({"name": source.name, "reason": "同名文件已存在"})
+            continue
+        try:
+            shutil.copy2(source, destination)
+        except OSError as exc:
+            skipped.append({"name": source.name, "reason": friendly_error(exc)})
+            continue
+        imported.append(source.name)
+    return {"imported": imported, "skipped": skipped, "source_dir": str(root)}
+
+
+def preview_source(settings: Settings, target: date) -> dict[str, Any]:
+    """Read-only preview for FR-2.6, returned as plain data."""
+    payload = core_preview(settings, target)
+    return {
+        "target_date": payload["target_date"],
+        "baseline_date": payload["baseline_date"],
+        "source_dir": payload["source_dir"],
+        "files_scanned": payload["files_scanned"],
+        "files_read": payload["files_read"],
+        "tables": payload["tables"],
+        "file_errors": payload["file_errors"],
+        "warnings": list(payload.warnings),
+        "has_target_rows": payload.has_target_rows,
+        "empty_source": payload.empty_source,
+    }
+
+
+def preview_caption(preview: dict[str, Any] | None) -> str:
+    """Operator wording for a preview payload (FR-2.6)."""
+    if not preview:
+        return "尚未预览。"
+    if preview["empty_source"]:
+        return "数据源为空：没有可读取的 Excel / CSV 文件。"
+    if not preview["has_target_rows"]:
+        return (
+            f"{preview['target_date']} 没有命中任何数据行"
+            f"（扫描 {preview['files_scanned']}、读取 {preview['files_read']} 个文件）"
+            f"；此时运行会以「无数据」结束，不会生成报告。"
+        )
+    rows = sum(int(table.get("target_rows") or 0) for table in preview["tables"])
+    issues = len(preview["warnings"])
+    return (
+        f"{preview['target_date']} 预计命中 {rows} 行"
+        f"（扫描 {preview['files_scanned']}、读取 {preview['files_read']} 个文件，"
+        f"兼容性提示 {issues} 条）；可以直接开始分析。"
+    )
+
+
+def artifact_entries(summary: dict[str, Any] | None) -> list[dict[str, str]]:
+    """Everything the run produced, for the 「更多产物」 menu (FR-3.4)."""
+    if not summary:
+        return []
+    cleaned = Path(summary["cleaned_path"]) if summary.get("cleaned_path") else None
+    run_record = cleaned.parent / "run_record.json" if cleaned else None
+    candidates = (
+        ("报告 HTML", summary.get("report_path")),
+        ("清洗数据 CSV", summary.get("cleaned_path")),
+        ("指标 metrics.json", summary.get("metrics_path")),
+        ("分析计划 analysis_plan.json", summary.get("plan_path")),
+        ("运行记录 run_record.json", str(run_record) if run_record else ""),
+    )
+    entries: list[dict[str, str]] = []
+    for label, path in candidates:
+        if path and Path(path).is_file():
+            entries.append({"label": label, "path": str(path)})
+    return entries
+
+
+def settings_paths(settings: Settings) -> dict[str, str]:
+    """Paths shown in the settings dialog (FR-4.3)."""
+    return {
+        "数据源目录": str(settings.source_dir),
+        "输出目录": str(settings.output_dir),
+        "日志目录": str(settings.log_dir),
+        "状态目录": str(settings.state_dir),
+        "配置文件": str(settings.project_root / "config" / "config.json"),
+    }
+
+
+def _config_payload(settings: Settings) -> dict[str, Any]:
+    path = settings.project_root / "config" / "config.json"
+    example = settings.project_root / "config" / "config.example.json"
+    for candidate in (path, example):
+        if candidate.is_file():
+            try:
+                loaded = json.loads(candidate.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                loaded = {}
+            if isinstance(loaded, dict):
+                return loaded
+    return {}
+
+
+def save_paths(settings: Settings, source_dir: str, output_dir: str) -> Path:
+    """Persist the two operator-visible paths (FR-4.3 / FR-4.4)."""
+    source = str(source_dir or "").strip()
+    output = str(output_dir or "").strip()
+    if not source or not output:
+        raise ValueError("数据源目录与输出目录都不能为空。")
+    path = settings.project_root / "config" / "config.json"
+    data = _config_payload(settings)
+    data["source_dir"] = source
+    data["output_dir"] = output
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(path, data)
+    return path
+
+
+def scheduler_status(settings: Settings) -> dict[str, Any]:
+    """Installed state + next run of the daily task (FR-7.1)."""
+    from ..scheduler import daemon_status, query_windows_task
+
+    installed, detail = query_windows_task(settings)
+    state = daemon_status(settings)
+    return {
+        "installed": bool(installed),
+        "task_name": settings.scheduler.task_name,
+        "schedule_time": settings.schedule_time,
+        "next_run": str(state.get("next_run") or ""),
+        "platform": str(state.get("platform") or ""),
+        "detail": str(detail or "")[:400],
+    }
+
+
+def scheduler_caption(status: dict[str, Any]) -> str:
+    """One line for the footer (FR-7.1)."""
+    if status.get("installed"):
+        next_run = status.get("next_run", "").replace("T", " ")[:16]
+        return f"定时任务：已安装（每天 {status.get('schedule_time')}，下次 {next_run}）"
+    return f"定时任务：未安装（每天 {status.get('schedule_time')} 未生效，可用命令行安装）"
+
+
+def package_logs(settings: Settings) -> Path:
+    """Bundle logs + environment into one zip for support (FR-8.3)."""
+    import zipfile
+    from importlib import metadata
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    destination = settings.output_dir / f"InsightFlow_logs_{stamp}.zip"
+    try:
+        settings.output_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+            if settings.log_dir.is_dir():
+                for item in sorted(settings.log_dir.rglob("*")):
+                    if item.is_file():
+                        archive.write(item, f"logs/{item.relative_to(settings.log_dir).as_posix()}")
+            versions = []
+            for package in ("pandas", "numpy", "openpyxl", "xlrd"):
+                try:
+                    versions.append(f"{package}={metadata.version(package)}")
+                except metadata.PackageNotFoundError:
+                    versions.append(f"{package}=未安装")
+            archive.writestr(
+                "environment.txt",
+                "\n".join(
+                    [
+                        f"python={sys.version.split()[0]}",
+                        f"executable={sys.executable}",
+                        f"project_root={settings.project_root}",
+                        f"date_order={settings.date_order}",
+                        f"schedule_time={settings.schedule_time}",
+                        *versions,
+                    ]
+                ),
+            )
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise ServiceError(friendly_error(exc)) from exc
+    return destination
+
+
+def wizard_seen(settings: Settings) -> bool:
+    """Has the first-run guide been dismissed? (FR-8.1)"""
+    path = settings.state_dir / "gui_state.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return bool(data.get("wizard_seen"))
+
+
+def mark_wizard_seen(settings: Settings) -> None:
+    path = settings.state_dir / "gui_state.json"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data: dict[str, Any] = {}
+        if path.is_file():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    data = loaded
+            except (OSError, json.JSONDecodeError):
+                data = {}
+        data["wizard_seen"] = True
+        atomic_write_json(path, data)
+    except OSError:
+        pass

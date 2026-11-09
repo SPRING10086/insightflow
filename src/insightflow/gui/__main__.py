@@ -7,6 +7,7 @@ import sys
 
 from ..config import ConfigError, load_settings
 from ..logging_setup import configure_logging
+from . import services
 from .app import InsightFlowApp
 
 
@@ -63,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
     if not app.confirm_environment():
         app.destroy()
         return 2
+    # First-run guide (FR-8.1) — shown once, dismissed state kept in state/.
+    if not services.wizard_seen(settings):
+        app._show_wizard()
     app.mainloop()
     return 0
 
