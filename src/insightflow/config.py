@@ -74,6 +74,130 @@ class SchedulerSettings:
 
 
 @dataclass
+class LLMSettings:
+    """LLM bypass configuration; every feature defaults to off (fail-closed)."""
+
+    enabled: bool = False
+    semantic: bool = False
+    plan: bool = False
+    execute: bool = False
+    narrative: bool = False
+    budget_per_table_cny: float = 5.0
+    budget_batch_cny: float = 20.0
+    request_timeout_seconds: float = 60.0
+    sandbox_timeout_seconds: float = 10.0
+    memory_mb: int = 512
+    max_input_rows: int = 200_000
+    retry_structured: int = 2
+    retry_transport: int = 2
+    warn_prompt_tokens: int = 8000
+
+    FEATURES = ("semantic", "plan", "execute", "narrative")
+
+    def feature_enabled(self, name: str) -> bool:
+        """Master switch gates every feature; unknown names are a config error."""
+        if name not in self.FEATURES:
+            raise ConfigError(f"未知的 LLM 功能开关: {name!r}")
+        return bool(self.enabled and getattr(self, name))
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any] | None) -> "LLMSettings":
+        if raw is None:
+            raw = {}
+        if not isinstance(raw, dict):
+            raise ConfigError("llm 配置必须是对象")
+        allowed = {"enabled", "features", "budget", "timeout", "sandbox", "retry", "warn_prompt_tokens"}
+        unknown = set(raw) - allowed
+        if unknown:
+            raise ConfigError(f"llm 配置包含未知键: {sorted(unknown)}")
+
+        def require_bool(value: Any, label: str) -> bool:
+            if not isinstance(value, bool):
+                raise ConfigError(f"{label} 必须是 true/false")
+            return value
+
+        def require_number(value: Any, label: str, low: float, high: float) -> float:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(f"{label} 必须是数字")
+            number = float(value)
+            if not (low <= number <= high):
+                raise ConfigError(f"{label} 必须在 {low}~{high} 之间")
+            return number
+
+        def require_int(value: Any, label: str, low: int, high: int) -> int:
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ConfigError(f"{label} 必须是整数")
+            if not (low <= value <= high):
+                raise ConfigError(f"{label} 必须在 {low}~{high} 之间")
+            return value
+
+        enabled = require_bool(raw.get("enabled", False), "llm.enabled")
+
+        features_raw = raw.get("features", {})
+        if not isinstance(features_raw, dict):
+            raise ConfigError("llm.features 必须是对象")
+        unknown_features = set(features_raw) - set(cls.FEATURES)
+        if unknown_features:
+            raise ConfigError(f"llm.features 包含未知开关: {sorted(unknown_features)}")
+        features = {
+            name: require_bool(features_raw.get(name, False), f"llm.features.{name}") for name in cls.FEATURES
+        }
+
+        budget = raw.get("budget", {})
+        if not isinstance(budget, dict):
+            raise ConfigError("llm.budget 必须是对象")
+        if set(budget) - {"per_table_cny", "batch_cny"}:
+            raise ConfigError(f"llm.budget 包含未知键: {sorted(set(budget) - {'per_table_cny', 'batch_cny'})}")
+        per_table = require_number(budget.get("per_table_cny", 5.0), "llm.budget.per_table_cny", 0, 100)
+        batch = require_number(budget.get("batch_cny", 20.0), "llm.budget.batch_cny", 0, 100)
+        if per_table > batch:
+            raise ConfigError("llm.budget.per_table_cny 不能大于 batch_cny")
+
+        timeout = raw.get("timeout", {})
+        if not isinstance(timeout, dict):
+            raise ConfigError("llm.timeout 必须是对象")
+        if set(timeout) - {"request_seconds", "sandbox_seconds"}:
+            raise ConfigError(f"llm.timeout 包含未知键: {sorted(set(timeout) - {'request_seconds', 'sandbox_seconds'})}")
+        request_timeout = require_number(timeout.get("request_seconds", 60.0), "llm.timeout.request_seconds", 1, 600)
+        sandbox_timeout = require_number(timeout.get("sandbox_seconds", 10.0), "llm.timeout.sandbox_seconds", 1, 600)
+
+        sandbox = raw.get("sandbox", {})
+        if not isinstance(sandbox, dict):
+            raise ConfigError("llm.sandbox 必须是对象")
+        if set(sandbox) - {"memory_mb", "max_input_rows"}:
+            raise ConfigError(f"llm.sandbox 包含未知键: {sorted(set(sandbox) - {'memory_mb', 'max_input_rows'})}")
+        memory_mb = require_int(sandbox.get("memory_mb", 512), "llm.sandbox.memory_mb", 64, 4096)
+        max_input_rows = require_int(sandbox.get("max_input_rows", 200_000), "llm.sandbox.max_input_rows", 1, 10_000_000)
+
+        retry = raw.get("retry", {})
+        if not isinstance(retry, dict):
+            raise ConfigError("llm.retry 必须是对象")
+        if set(retry) - {"structured_output", "transport"}:
+            raise ConfigError(f"llm.retry 包含未知键: {sorted(set(retry) - {'structured_output', 'transport'})}")
+        retry_structured = require_int(retry.get("structured_output", 2), "llm.retry.structured_output", 0, 3)
+        retry_transport = require_int(retry.get("transport", 2), "llm.retry.transport", 0, 3)
+
+        warn_prompt_tokens = require_int(raw.get("warn_prompt_tokens", 8000), "llm.warn_prompt_tokens", 0, 1_000_000)
+
+        return cls(
+            enabled=enabled,
+            semantic=features["semantic"],
+            plan=features["plan"],
+            execute=features["execute"],
+            narrative=features["narrative"],
+            budget_per_table_cny=per_table,
+            budget_batch_cny=batch,
+            request_timeout_seconds=request_timeout,
+            sandbox_timeout_seconds=sandbox_timeout,
+            memory_mb=memory_mb,
+            max_input_rows=max_input_rows,
+            retry_structured=retry_structured,
+            retry_transport=retry_transport,
+            warn_prompt_tokens=warn_prompt_tokens,
+        )
+
+
+@dataclass
 class Settings:
     project_root: Path
     config_path: Path
@@ -98,6 +222,7 @@ class Settings:
     comparison: ComparisonSettings = field(default_factory=ComparisonSettings)
     report: ReportSettings = field(default_factory=ReportSettings)
     scheduler: SchedulerSettings = field(default_factory=SchedulerSettings)
+    llm: LLMSettings = field(default_factory=LLMSettings)
 
     @property
     def max_file_bytes(self) -> int:
@@ -139,6 +264,21 @@ class Settings:
             "comparison": {
                 "enabled": self.comparison.enabled,
                 "lookback_days": self.comparison.lookback_days,
+            },
+            "llm": {
+                "enabled": self.llm.enabled,
+                "features": {name: getattr(self.llm, name) for name in LLMSettings.FEATURES},
+                "budget": {
+                    "per_table_cny": self.llm.budget_per_table_cny,
+                    "batch_cny": self.llm.budget_batch_cny,
+                },
+                "timeout": {
+                    "request_seconds": self.llm.request_timeout_seconds,
+                    "sandbox_seconds": self.llm.sandbox_timeout_seconds,
+                },
+                "sandbox": {"memory_mb": self.llm.memory_mb, "max_input_rows": self.llm.max_input_rows},
+                "retry": {"structured_output": self.llm.retry_structured, "transport": self.llm.retry_transport},
+                "warn_prompt_tokens": self.llm.warn_prompt_tokens,
             },
         }
 
@@ -249,6 +389,7 @@ def load_settings(
             task_name=str(merged.get("scheduler", {}).get("task_name", _DEFAULTS["scheduler"]["task_name"])),
             grace_minutes=max(0, int(merged.get("scheduler", {}).get("grace_minutes", 180))),
         ),
+        llm=LLMSettings.from_dict(merged.get("llm")),
     )
     if settings.max_file_mb <= 0:
         raise ConfigError("max_file_mb 必须大于 0")

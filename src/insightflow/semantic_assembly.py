@@ -24,12 +24,25 @@ def _token(kind: str | None, label: str) -> str:
     return token
 
 
+def _llm_config(env: Mapping[str, str] | None, request_timeout_seconds: float | None, transport_retries: int | None):
+    from .llm.client import LLMConfig
+
+    config = LLMConfig.from_env(env)
+    if request_timeout_seconds is not None:
+        config.timeout_seconds = float(request_timeout_seconds)
+    if transport_retries is not None:
+        config.max_retries = max(0, int(transport_retries))
+    return config
+
+
 def build_semantic_provider(
     kind: str | None = "none",
     *,
     env: Mapping[str, str] | None = None,
     transport: Any | None = None,
     batch_budget_cny: float = 20.0,
+    request_timeout_seconds: float | None = None,
+    transport_retries: int | None = None,
 ) -> SemanticProvider | None:
     """Build a stage-1 semantic provider; ``none`` disables the bypass."""
     if not _token(kind, "语义"):
@@ -37,10 +50,9 @@ def build_semantic_provider(
 
     # Imported lazily and only here: the one controlled reference to the LLM package.
     from .llm.adapter import LLMSemanticProvider
-    from .llm.client import LLMConfig
 
     return LLMSemanticProvider(
-        LLMConfig.from_env(env),
+        _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
     )
@@ -54,16 +66,17 @@ def build_execution_provider(
     batch_budget_cny: float = 20.0,
     timeout_seconds: float = 10.0,
     memory_mb: int = 512,
+    request_timeout_seconds: float | None = None,
+    transport_retries: int | None = None,
 ) -> Any | None:
     """Build a stage-3 execution provider; ``none`` disables controlled execution."""
     if not _token(kind, "执行"):
         return None
 
-    from .llm.client import LLMConfig
     from .llm.executor import LLMExecutionProvider
 
     return LLMExecutionProvider(
-        LLMConfig.from_env(env),
+        _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
         timeout_seconds=timeout_seconds,
@@ -77,16 +90,17 @@ def build_narrative_provider(
     env: Mapping[str, str] | None = None,
     transport: Any | None = None,
     batch_budget_cny: float = 20.0,
+    request_timeout_seconds: float | None = None,
+    transport_retries: int | None = None,
 ) -> Any | None:
     """Build a stage-4 narrative provider; ``none`` keeps the rule insights only."""
     if not _token(kind, "叙事"):
         return None
 
-    from .llm.client import LLMConfig
     from .llm.narrative_gen import LLMNarrativeProvider
 
     return LLMNarrativeProvider(
-        LLMConfig.from_env(env),
+        _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
     )
@@ -98,16 +112,17 @@ def build_plan_provider(
     env: Mapping[str, str] | None = None,
     transport: Any | None = None,
     batch_budget_cny: float = 20.0,
+    request_timeout_seconds: float | None = None,
+    transport_retries: int | None = None,
 ) -> PlanProvider | None:
     """Build a stage-2 plan provider; ``none`` keeps the rule plan only."""
     if not _token(kind, "计划"):
         return None
 
-    from .llm.client import LLMConfig
     from .llm.plan_adapter import LLMPlanProvider
 
     return LLMPlanProvider(
-        LLMConfig.from_env(env),
+        _llm_config(env, request_timeout_seconds, transport_retries),
         transport=transport,
         batch_budget_cny=batch_budget_cny,
     )

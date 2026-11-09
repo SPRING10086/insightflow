@@ -62,25 +62,25 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--semantic",
         choices=["none", "llm"],
-        default="none",
+        default=None,
         help="语义 Schema 提供者：none=规则（默认）；llm=旁路调用，失败自动降级规则",
     )
     run.add_argument(
         "--plan",
         choices=["none", "llm"],
-        default="none",
+        default=None,
         help="分析计划提供者：none=规则（默认）；llm=旁路生成计划，失败自动降级规则计划",
     )
     run.add_argument(
         "--execute",
         choices=["none", "llm"],
-        default="none",
+        default=None,
         help="受控执行：none=只算规则（默认）；llm=生成代码并在沙箱执行，失败自动降级规则结果",
     )
     run.add_argument(
         "--narrative",
         choices=["none", "llm"],
-        default="none",
+        default=None,
         help="叙事：none=仅规则洞察（默认）；llm=生成转义后的智能解读，失败自动回退规则洞察",
     )
 
@@ -149,56 +149,70 @@ def main(argv: list[str] | None = None) -> int:
     return 1
 
 
+def _llm_feature_on(settings: Settings, args: argparse.Namespace, name: str) -> bool:
+    """CLI value (if given) overrides config; otherwise the config block decides."""
+    flag = getattr(args, name, None)
+    if flag is None:
+        return settings.llm.feature_enabled(name)
+    return flag == "llm"
+
+
 def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
+    llm = settings.llm
+    semantic_on = _llm_feature_on(settings, args, "semantic")
+    plan_on = _llm_feature_on(settings, args, "plan")
+    execute_on = _llm_feature_on(settings, args, "execute")
+    narrative_on = _llm_feature_on(settings, args, "narrative")
+    budget = llm.budget_batch_cny
+    request_timeout = llm.request_timeout_seconds
+    retries = llm.retry_transport
+
+    semantic_kwargs = {
+        "batch_budget_cny": budget,
+        "request_timeout_seconds": request_timeout,
+        "transport_retries": retries,
+    }
+
     provider = None
-    semantic_kind = getattr(args, "semantic", "none")
-    if semantic_kind and semantic_kind != "none":
+    if semantic_on:
         try:
-            provider = build_semantic_provider(semantic_kind)
+            provider = build_semantic_provider("llm", **semantic_kwargs)
         except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
             _error(f"语义提供者不可用，已降级为规则口径：{exc}")
 
     plan_provider = None
-    plan_kind = getattr(args, "plan", "none")
-    if plan_kind and plan_kind != "none":
+    if plan_on or execute_on:
         try:
-            plan_provider = build_plan_provider(plan_kind)
+            plan_provider = build_plan_provider("llm", **semantic_kwargs)
         except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
             _error(f"计划提供者不可用，已降级为规则计划：{exc}")
 
-    # A plan must be grounded in the semantic schema; without it the plan would
-    # only see the rule-filtered columns, which defeats the whole bypass.
-    if plan_provider is not None and provider is None:
+    # A plan/execution must be grounded in the semantic schema; without it the
+    # model only sees rule-filtered columns, which defeats the bypass.
+    if (plan_provider is not None or execute_on) and provider is None:
         try:
-            provider = build_semantic_provider("llm")
+            provider = build_semantic_provider("llm", **semantic_kwargs)
         except Exception as exc:  # noqa: BLE001
-            _error(f"计划需要语义 Schema，但语义提供者不可用：{exc}")
+            _error(f"计划/执行需要语义 Schema，但语义提供者不可用：{exc}")
 
     execution_provider = None
-    execute_kind = getattr(args, "execute", "none")
-    if execute_kind and execute_kind != "none":
+    if execute_on:
         try:
-            execution_provider = build_execution_provider(execute_kind)
+            execution_provider = build_execution_provider(
+                "llm",
+                batch_budget_cny=budget,
+                timeout_seconds=llm.sandbox_timeout_seconds,
+                memory_mb=llm.memory_mb,
+                request_timeout_seconds=request_timeout,
+                transport_retries=retries,
+            )
         except Exception as exc:  # noqa: BLE001
             _error(f"执行提供者不可用，已降级为规则结果：{exc}")
-        if execution_provider is not None:
-            # Execution depends on the plan (metric/dimension) and semantics.
-            if plan_provider is None:
-                try:
-                    plan_provider = build_plan_provider("llm")
-                except Exception as exc:  # noqa: BLE001
-                    _error(f"执行需要计划，但计划提供者不可用：{exc}")
-            if provider is None and plan_provider is not None:
-                try:
-                    provider = build_semantic_provider("llm")
-                except Exception as exc:  # noqa: BLE001
-                    _error(f"执行需要语义 Schema，但语义提供者不可用：{exc}")
 
     narrative_provider = None
-    narrative_kind = getattr(args, "narrative", "none")
-    if narrative_kind and narrative_kind != "none":
+    if narrative_on:
         try:
-            narrative_provider = build_narrative_provider(narrative_kind)
+            narrative_provider = build_narrative_provider("llm", **semantic_kwargs)
         except Exception as exc:  # noqa: BLE001
             _error(f"叙事提供者不可用，已回退规则洞察：{exc}")
 

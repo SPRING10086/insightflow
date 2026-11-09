@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.9-dev — LLM 阶段 5a-1：统一配置
+
+- 新增 `LLMSettings`（四个开关 + 总开关、预算、超时、沙箱内存/行数、重试、长 prompt 预警），
+  `Settings.llm` 为唯一事实源；默认全关，非法/越界/未知键 fail-closed。
+- CLI 四个 LLM 开关缺省改为“读配置”，显式值只覆盖本次运行、不写回配置。
+- 预算/超时/内存/重试从配置注入 provider 构建；`config.example.json` 增加 `llm` 块与注释性默认值。
+- 测试 260 项。详见 [docs/llm-stage5-notes.md](docs/llm-stage5-notes.md)。
+
 ## 1.0.8-dev — LLM 阶段 4：可视化 HTML 叙事
 
 - 新增 `narrative.py`（叙事协议、事实映射、占位符校验/渲染、产物）与

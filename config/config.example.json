@@ -30,5 +30,31 @@
   "scheduler": {
     "task_name": "InsightFlow_Daily_0930",
     "grace_minutes": 180
+  },
+  "llm": {
+    "enabled": false,
+    "features": {
+      "semantic": false,
+      "plan": false,
+      "execute": false,
+      "narrative": false
+    },
+    "budget": {
+      "per_table_cny": 5.0,
+      "batch_cny": 20.0
+    },
+    "timeout": {
+      "request_seconds": 60,
+      "sandbox_seconds": 10
+    },
+    "sandbox": {
+      "memory_mb": 512,
+      "max_input_rows": 200000
+    },
+    "retry": {
+      "structured_output": 2,
+      "transport": 2
+    },
+    "warn_prompt_tokens": 8000
   }
 }
