@@ -23,7 +23,7 @@ from .utils import (
     parse_timestamp_value,
 )
 
-_INLINE_UNIT = re.compile(r"(亿|万|千|[kKmM])$")
+_INLINE_UNIT = re.compile(r"(亿|万|千|百|[kKmMwW])$")
 _ID_NAME = re.compile(r"(^id$|id$|编号$|单号$|号$)", re.IGNORECASE)
 
 
@@ -273,9 +273,9 @@ def normalize_rows(
 
 def _parse_field_series(series: pd.Series, field: FieldSpec) -> pd.Series:
     if field.kind == "metric":
-        use_multiplier = _needs_header_multiplier(series, field)
-        multiplier = field.multiplier if use_multiplier else 1.0
-        return series.map(lambda value: _metric_value(value, multiplier))
+        # P2-2: decide per value, never for the whole column.  A single inline
+        # unit must not turn the header multiplier off for every other row.
+        return series.map(lambda value: _metric_value(value, field.multiplier))
     if field.kind == "dimension":
         return series.map(_text_value)
     if field.kind == "id":
@@ -283,18 +283,61 @@ def _parse_field_series(series: pd.Series, field: FieldSpec) -> pd.Series:
     return series.map(_text_value)
 
 
-def _metric_value(value: Any, multiplier: float) -> float | None:
+def _has_inline_unit(value: Any) -> bool:
+    """True when the cell carries its own unit (``1.2万``, ``3k``, ``5亿元``)."""
+    text = normalize_text(value)
+    if not text:
+        return False
+    text = re.sub(r"[¥￥$€£]", "", text)
+    text = re.sub(r"(人民币|rmb|cny|元|圆|块钱|块)$", "", text, flags=re.IGNORECASE)
+    text = text.replace("，", ",").replace(",", "").replace(" ", "")
+    return bool(_INLINE_UNIT.search(text))
+
+
+def _metric_value(value: Any, header_multiplier: float) -> float | None:
     number = parse_number(value)
     if number is None:
         return None
-    return number * multiplier
+    # ``parse_number`` already applied any inline unit; applying the header unit
+    # again would double-scale.  Bare values do inherit the header unit.
+    if header_multiplier != 1.0 and not _has_inline_unit(value):
+        return number * header_multiplier
+    return number
 
 
-def _needs_header_multiplier(series: pd.Series, field: FieldSpec) -> bool:
-    if field.multiplier == 1.0:
-        return False
-    sample = [normalize_text(value) for value in series.head(50).tolist() if normalize_text(value)]
-    return not any(_INLINE_UNIT.search(value.replace(",", "")) for value in sample)
+def unit_mix_issues(frame: pd.DataFrame, schema: TableSchema, table: TableData) -> list[FileIssue]:
+    """P2-2: flag columns that mix header units with inline units.
+
+    Mixed columns are still converted per value (the safe path); the warning
+    exists so the operator can check whether the source export is consistent.
+    """
+    issues: list[FileIssue] = []
+    for field in schema.fields.values():
+        if field.kind != "metric" or field.multiplier == 1.0 or field.original not in frame.columns:
+            continue
+        inline = bare = 0
+        for value in frame[field.original].tolist():
+            if parse_number(value) is None:
+                continue
+            if _has_inline_unit(value):
+                inline += 1
+            else:
+                bare += 1
+        if inline and bare:
+            issues.append(
+                FileIssue(
+                    code="mixed_unit",
+                    message=(
+                        f"字段「{field.label}」同时存在带单位（{inline} 个，如 1.2万）"
+                        f"与不带单位（{bare} 个）的值；表头单位「{field.unit or '倍率'}」只作用于不带单位的值，"
+                        "已按逐值口径换算，请核对源数据。"
+                    ),
+                    severity="warning",
+                    file=table.source.relative_path,
+                    sheet=table.sheet_label,
+                )
+            )
+    return issues
 
 
 def _text_value(value: Any) -> str:

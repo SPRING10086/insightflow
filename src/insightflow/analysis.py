@@ -66,7 +66,7 @@ def analyze(
     top_records = _top_record_rows(target, primary_metric, fields)
     margin_rows = _margin_rows(target, primary_dimension, fields)
 
-    kpis = _build_kpis(totals, baseline_totals, fields, plan)
+    kpis = _build_kpis(totals, baseline_totals, fields, plan, cleaning)
     insights = _build_insights(
         target=target,
         baseline=baseline,
@@ -175,6 +175,7 @@ def _build_kpis(
     baseline_totals: dict[str, Any],
     fields: dict[str, FieldSpec],
     plan: AnalysisPlan,
+    cleaning: Any | None = None,
 ) -> list[KPI]:
     kpis: list[KPI] = []
     primary = plan.primary_metric
@@ -197,6 +198,7 @@ def _build_kpis(
                 delta_label=baseline_label,
             )
         )
+        _apply_imputation(kpis[-1], cleaning, field)
         if primary != "orders" and "orders" in totals.get("metrics", {}):
             orders = totals["metrics"]["orders"]
             prev_orders = baseline_totals.get("metrics", {}).get("orders") if baseline_totals else None
@@ -212,6 +214,7 @@ def _build_kpis(
                     delta_label=baseline_label,
                 )
             )
+            _apply_imputation(kpis[-1], cleaning, fields.get("orders"))
         if totals.get("aov") is not None:
             kpis.append(
                 _kpi(
@@ -254,6 +257,7 @@ def _build_kpis(
                     delta_label=baseline_label,
                 )
             )
+            _apply_imputation(kpis[-1], cleaning, fields.get("customers"))
     if len(kpis) < 5:
         kpis.append(
             _kpi(
@@ -303,6 +307,27 @@ def _kpi(
         hint=hint,
         value_format=value_type,
     )
+
+
+def _apply_imputation(kpi: KPI, cleaning: Any | None, field: FieldSpec | None) -> None:
+    """P2-1: attach a measured-only (valid) value when cells were imputed.
+
+    Summed metrics get a second number so the operator can tell how much of the
+    total is estimated; averaged metrics (rates) are left untouched because the
+    median fill does not distort their scale the same way.
+    """
+    if cleaning is None or field is None or field.aggregation == "AVG" or kpi.value is None:
+        return
+    count = int((getattr(cleaning, "missing_filled", {}) or {}).get(field.canonical, 0) or 0)
+    if not count:
+        return
+    imputed = float((getattr(cleaning, "imputed_sums", {}) or {}).get(field.canonical, 0.0) or 0.0)
+    valid = kpi.value - imputed
+    kpi.imputed_count = count
+    kpi.valid_value = valid
+    kpi.valid_formatted = _format_value(valid, kpi.value_format)
+    note = f"含填补 {count} 个（有效值 {kpi.valid_formatted}）"
+    kpi.hint = f"{kpi.hint}；{note}" if kpi.hint else note
 
 
 # ---------------------------------------------------------------------------

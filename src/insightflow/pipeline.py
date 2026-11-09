@@ -36,7 +36,7 @@ from .models import (
     STATUS_SKIPPED,
     STATUS_SUCCESS,
 )
-from .normalize import PeriodExtraction, extract_periods
+from .normalize import PeriodExtraction, extract_periods, unit_mix_issues
 from .planner import build_plan, effective_fields
 from .readers import read_sources
 from .report import ReportError, render_report
@@ -475,6 +475,9 @@ def _prepare(
         for issue in schema.issues:
             if issue.severity in {"warning", "error"}:
                 warnings.append(issue.as_text())
+        # P2-2: mixed header/inline units are converted per value; warn anyway.
+        for issue in unit_mix_issues(table.frame, schema, table):
+            warnings.append(issue.as_text())
         if not extraction.target.empty:
             target_frames.append(extraction.target)
             unparseable_rows += extraction.unparseable_rows

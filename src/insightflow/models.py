@@ -176,6 +176,9 @@ class CleaningReport:
     duplicates_removed: int = 0
     invalid_date_rows: int = 0
     missing_filled: dict[str, int] = field(default_factory=dict)
+    #: P2-1: sum of the values that were imputed per canonical metric, so a
+    #: "valid" (measured-only) total can be reported next to the filled total.
+    imputed_sums: dict[str, float] = field(default_factory=dict)
     outlier_counts: dict[str, int] = field(default_factory=dict)
     outlier_bounds: dict[str, dict[str, float]] = field(default_factory=dict)
     garbled_repaired: int = 0
@@ -253,6 +256,10 @@ class KPI:
     trend: str = "flat"  # up | down | flat | unknown
     hint: str = ""
     value_format: str = "number"
+    #: P2-1 double-track: value excluding imputed cells, when the metric is summed.
+    valid_value: float | None = None
+    valid_formatted: str = ""
+    imputed_count: int = 0
 
 
 @dataclass

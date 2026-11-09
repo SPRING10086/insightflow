@@ -221,6 +221,14 @@ def _kpi_strip(kpis: list[KPI]) -> str:
         trend = kpi.trend if kpi.trend in {"up", "down", "flat"} else "flat"
         arrow = "↑" if trend == "up" else "↓" if trend == "down" else "→"
         delta = kpi.delta_text if kpi.delta is not None else "—"
+        # P2-1: when part of a summed metric is estimated, show the measured
+        # value next to the total instead of silently mixing them.
+        valid_line = (
+            f'<div class="kpi-hint" style="color:#b45309">有效值 {html_escape(kpi.valid_formatted)}'
+            f"（含填补 {kpi.imputed_count} 个）</div>"
+            if kpi.imputed_count
+            else ""
+        )
         cards.append(
             f"""
             <div class="kpi">
@@ -228,6 +236,7 @@ def _kpi_strip(kpis: list[KPI]) -> str:
               <div class="kpi-value" title="{html_escape(kpi.formatted)}">{html_escape(kpi.formatted)}</div>
               <div class="kpi-delta {trend}"><span class="arrow">{arrow}</span>{html_escape(delta)}<small>{html_escape(kpi.delta_label)}</small></div>
               <div class="kpi-hint" title="{html_escape(kpi.hint)}">{html_escape(kpi.hint)}</div>
+              {valid_line}
             </div>
             """
         )

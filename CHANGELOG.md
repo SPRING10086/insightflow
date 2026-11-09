@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.0.2 — 2026-11-09
+
+### P2 商业级门槛（部分闭环）
+
+- **P2-1 中位数填补双轨口径**
+  - `CleaningReport.imputed_sums` 记录每列被填补值的金额/数量总和；`KPI` 新增
+    `valid_value / valid_formatted / imputed_count`。
+  - 求和型 KPI 同时给出「含填补总量」与「有效值（剔除填补）」；报告 KPI 卡片新增一行
+    「有效值 … （含填补 N 个）」，比率型指标（AVG）不受影响。
+  - 回归测试：`test_imputed_sum_and_valid_value_reach_the_report`、
+    `test_clean_data_has_no_valid_line`。
+
+- **P2-2 混合单位逐值换算**
+  - 表头单位（如「销售额(万元)」）现在只作用于**不带单位**的单元格；带内联单位的值
+    （`1.2万`、`3k`、`5w`）按自身单位换算，不再出现"整列一刀切"导致的量级错误。
+  - `_INLINE_UNIT` 补齐 `百`、`w/W`，与 `parse_number` 对齐。
+  - 新增 `mixed_unit` 质量告警：同列既带单位又不带单位时提示人工核对。
+  - 回归测试：`test_header_and_inline_units_are_scaled_per_value`、
+    `test_column_without_inline_units_uses_header_multiplier`。
+
+- **P2-3 对账与覆盖率（对账已闭环，覆盖率门槛机制已建、目标未达）**
+  - 新增 `scripts/reconcile.py`：独立于 pipeline，从产物重算行数守恒、指标合计、
+    血缘行号、填补标记一致性；不一致退出码 1。
+  - 新增 `scripts/coverage_gate.py`：零依赖（`sys.settrace` + AST）核心行覆盖率门槛，
+    CI 已接入 ratchet 门槛。
+  - **当前核心行覆盖率 60.3%，低于 85% 目标**；门槛先锁在 58% 防回退，
+    提升测试覆盖是后续唯一剩余工作。
+
+### 验证
+
+- `python -m unittest discover -s tests`：**105 tests OK**。
+- `python scripts/reconcile.py output/<日期>`：真实运行产物对账通过。
+
 ## 1.0.1 — 2026-11-08
 
 ### P0 阻断级修复

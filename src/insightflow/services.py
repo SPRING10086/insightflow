@@ -18,7 +18,7 @@ from typing import Any
 
 from .config import Settings
 from .discovery import discover_files
-from .normalize import extract_periods
+from .normalize import extract_periods, unit_mix_issues
 from .readers import read_sources
 from .schema import detect_schema
 
@@ -77,11 +77,13 @@ def preview(
 
     read_result = read_sources(files, settings, source_root)
     tables: list[dict[str, Any]] = []
+    mix_issues: list[Any] = []
     for table in read_result.tables:
         # Same call as the previous CLI implementation: header detection stays
         # on the default scan window so the preview is byte-for-byte unchanged.
         schema = detect_schema(table.frame, date_order=settings.date_order)
         extraction = extract_periods(table, schema, target, baseline, date_order=settings.date_order)
+        mix_issues.extend(unit_mix_issues(table.frame, schema, table))
         tables.append(
             {
                 "file": table.source.relative_path,
@@ -115,7 +117,7 @@ def preview(
             "file": issue.file,
             "sheet": issue.sheet,
         }
-        for issue in read_result.warnings
+        for issue in [*read_result.warnings, *mix_issues]
         if issue.severity in {"warning", "error"}
     ]
     return payload

@@ -79,6 +79,7 @@ def clean_frame(
 
     missing_before: dict[str, int] = {}
     missing_filled: dict[str, int] = {}
+    imputed_sums: dict[str, float] = {}
     field_stats: list[FieldCleaningStat] = []
     imputed_mask = pd.Series(False, index=working.index)
     garbled_repaired_total = 0
@@ -94,6 +95,8 @@ def clean_frame(
             fill_value = float(median) if pd.notna(median) else 0.0
             series = series.fillna(fill_value)
             missing_filled[field.canonical] = missing
+            # P2-1: remember how much of the column total is estimated.
+            imputed_sums[field.canonical] = round(fill_value * missing, 6)
             imputed_mask = imputed_mask | missing_mask
         working[field.canonical] = series.astype(float)
 
@@ -207,6 +210,7 @@ def clean_frame(
         duplicates_removed=duplicates_removed,
         invalid_date_rows=unparseable_rows,
         missing_filled=missing_filled,
+        imputed_sums=imputed_sums,
         outlier_counts=outlier_counts,
         outlier_bounds=outlier_bounds,
         garbled_repaired=garbled_repaired_total,
@@ -239,6 +243,7 @@ def merge_cleaning_reports(reports: list[CleaningReport]) -> CleaningReport:
         duplicates_removed=sum(report.duplicates_removed for report in reports),
         invalid_date_rows=sum(report.invalid_date_rows for report in reports),
         missing_filled=_merge_counts(report.missing_filled for report in reports),
+        imputed_sums=_merge_counts(report.imputed_sums for report in reports),
         outlier_counts=_merge_counts(report.outlier_counts for report in reports),
         garbled_repaired=sum(report.garbled_repaired for report in reports),
         quality_score=round(sum(report.quality_score for report in reports) / len(reports), 1),

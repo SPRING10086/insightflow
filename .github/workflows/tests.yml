@@ -40,3 +40,20 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m unittest tests.test_gui_stage4.PackagingAndSafetyTests.test_source_has_no_network_imports -v
+
+      # P2-3: independent reconciliation of a real run's artifacts.
+      - name: Reconcile a demo run
+        env:
+          PYTHONPATH: src
+          PYTHONIOENCODING: utf-8
+        run: |
+          python -m insightflow demo --date 2026-11-07
+          python scripts/reconcile.py output/2026-11-07
+
+      # P2-3: coverage ratchet.  The commercial target is 85%; the gate is set at
+      # the current measured baseline so it can only go up, never down.
+      - name: Coverage ratchet (core, target 85%)
+        env:
+          PYTHONPATH: src
+          PYTHONIOENCODING: utf-8
+        run: python scripts/coverage_gate.py --threshold 58
