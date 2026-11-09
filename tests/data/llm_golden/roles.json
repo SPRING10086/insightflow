@@ -1,6 +1,6 @@
 {
-  "status": "draft-pending-reviewer",
-  "note": "开发用对照基线，最终 golden 由审查方确认后替换；deepseek 不得自行修改本文件。",
+  "status": "reviewer-confirmed",
+  "note": "审查方于 2026-11-09 独立核对确认。01/02 标注正确；03 的「企业名称」「法定代表人」经裁定保持 text：二者在样本中 100% 唯一、高基数、不可用于分组聚合，属自由文本而非可分组维度；LLM 判为 dimension 系过度泛化错误，非关键角色错误。deepseek 不得自行修改本文件。",
   "samples": {
     "01_主样本_干净": {
       "日期": "date",

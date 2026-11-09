@@ -75,14 +75,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="LLM 语义 Schema 一致率评估（真实调用）")
     parser.add_argument("--golden", default=str(GOLDEN))
     parser.add_argument("--samples", default=str(SAMPLES))
-    parser.add_argument("--out", default=str(ROOT / "logs" / "llm_semantics_eval.json"))
+    parser.add_argument("--out", default=str(ROOT / "docs" / "llm-semantics-eval.json"))
     args = parser.parse_args(argv)
 
     golden = json.loads(Path(args.golden).read_text(encoding="utf-8"))
-    if not str(golden.get("status", "")).startswith("draft") and golden.get("status") != "confirmed":
-        print(f"golden 状态未知：{golden.get('status')!r}", file=sys.stderr)
-    if golden.get("status") != "confirmed":
-        print("注意：golden 仍为草稿（draft），待审查方确认后数字才具最终效力。", file=sys.stderr)
+    confirmed_states = {"confirmed", "reviewer-confirmed"}
+    if golden.get("status") not in confirmed_states:
+        print("注意：golden 尚未确认（当前状态 %r），数字仅供参考。" % golden.get("status"), file=sys.stderr)
 
     try:
         provider = LLMSemanticProvider(LLMConfig.from_env())

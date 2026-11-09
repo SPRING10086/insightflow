@@ -1,0 +1,75 @@
+{
+  "generated_at": "2026-11-09T16:36:35",
+  "golden_status": "reviewer-confirmed",
+  "prompt_version": "analysis_plan_v3",
+  "samples": 3,
+  "fields_total": 20,
+  "fields_correct": 20,
+  "role_accuracy": 1.0,
+  "key_role_errors": [],
+  "anomaly_recall_avg": 1.0,
+  "cost_total_cny": 0.046412,
+  "latency_avg_ms": 13343,
+  "rows": [
+    {
+      "sample": "01_主样本_干净.csv",
+      "fields_total": 5,
+      "fields_correct": 5,
+      "role_accuracy": 1.0,
+      "key_role_errors": [],
+      "mismatches": {},
+      "anomalies_expected": [],
+      "anomalies_predicted": [
+        "日期",
+        "毛利率",
+        "销售额"
+      ],
+      "anomaly_recall": 1.0,
+      "cost_cny": 0.020658,
+      "latency_ms": 18808,
+      "prompt_version": "analysis_plan_v3"
+    },
+    {
+      "sample": "02_边界样本_含问题.csv",
+      "fields_total": 5,
+      "fields_correct": 5,
+      "role_accuracy": 1.0,
+      "key_role_errors": [],
+      "mismatches": {},
+      "anomalies_expected": [
+        "销售额"
+      ],
+      "anomalies_predicted": [
+        "日期",
+        "毛利率",
+        "订单号",
+        "销售额"
+      ],
+      "anomaly_recall": 1.0,
+      "cost_cny": 0.009614,
+      "latency_ms": 9232,
+      "prompt_version": "analysis_plan_v3"
+    },
+    {
+      "sample": "03_工商登记_合成样本.csv",
+      "fields_total": 10,
+      "fields_correct": 10,
+      "role_accuracy": 1.0,
+      "key_role_errors": [],
+      "mismatches": {},
+      "anomalies_expected": [
+        "注册资本(万元)"
+      ],
+      "anomalies_predicted": [
+        "注册资本(万元)",
+        "登记机关",
+        "行业代码",
+        "订单日期"
+      ],
+      "anomaly_recall": 1.0,
+      "cost_cny": 0.01614,
+      "latency_ms": 11990,
+      "prompt_version": "analysis_plan_v3"
+    }
+  ]
+}

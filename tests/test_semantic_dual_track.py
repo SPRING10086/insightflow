@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from insightflow import semantic  # noqa: E402
 from insightflow.config import load_settings  # noqa: E402
+from insightflow.llm import payloads  # noqa: E402
 from insightflow.llm.adapter import LLMSemanticProvider  # noqa: E402
 from insightflow.llm.client import CostLimitExceeded, LLMConfig  # noqa: E402
 from insightflow.models import FieldSpec  # noqa: E402
@@ -84,6 +85,32 @@ class FakeProvider:
                 FieldSemantics(name=name, role=role, unit="", meaning="", confidence=0.9, source="llm", relations=[])
             )
         return ProviderTableResult(fields=fields, prompt_version="test-v1", cost_cny=0.01, latency_ms=5)
+
+
+class PayloadCardinalityTests(unittest.TestCase):
+    def test_payload_carries_counts_but_not_values(self):
+        rows = [
+            {"区域": "华东", "企业名称": "甲公司"},
+            {"区域": "华东", "企业名称": "乙公司"},
+            {"区域": "华南", "企业名称": "丙公司"},
+        ]
+        payload = payloads.build_payload("t", "s.csv", ["区域", "企业名称"], rows)
+        stats = {field["name"]: field for field in payload["fields"]}
+        self.assertEqual(stats["区域"]["unique_count"], 2)
+        self.assertAlmostEqual(stats["区域"]["unique_ratio"], 0.6667, places=3)
+        self.assertEqual(stats["企业名称"]["unique_count"], 3)
+        self.assertEqual(stats["企业名称"]["unique_ratio"], 1.0)
+        # Counts only: the full table is not serialised, and samples stay capped.
+        self.assertEqual(len(payload["samples"]), 3)
+        self.assertNotIn("unique_ratio", payload["samples"][0])
+
+    def test_prompt_v3_contains_cardinality_rules(self):
+        prompt = (ROOT / "src" / "insightflow" / "llm" / "prompts" / "analysis_plan_v3.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("unique_ratio", prompt)
+        self.assertIn("高基数自由文本", prompt)
+        self.assertIn("不要因为", prompt)
 
 
 class SemanticArtifactTests(unittest.TestCase):
@@ -182,7 +209,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result.source_kind, "llm")
         self.assertEqual(result.fields[0].role, "metric")
         self.assertEqual(result.fields[0].relations, ["订单号→销售额"])
-        self.assertEqual(result.prompt_version, "analysis_plan_v2")
+        self.assertEqual(result.prompt_version, "analysis_plan_v3")
         self.assertAlmostEqual(result.cost_cny, 1.5, places=6)
 
     def test_batch_budget_stops_further_calls(self):

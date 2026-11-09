@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SCHEMA_VERSION = "1.0"
-PROMPT_VERSION = "analysis_plan_v2"
+PROMPT_VERSION = "analysis_plan_v3"
 
 ALLOWED_ROLES = {"date", "dimension", "metric", "id", "text"}
 

@@ -16,7 +16,7 @@ from .client import CostLimitExceeded, DeepSeekClient, LLMConfig
 from .contracts import PROMPT_VERSION, ContractError, parse_result
 from .payloads import build_payload
 
-PROMPT_FILE = Path(__file__).with_name("prompts") / "analysis_plan_v2.md"
+PROMPT_FILE = Path(__file__).with_name("prompts") / "analysis_plan_v3.md"
 
 
 class CoverageError(Exception):

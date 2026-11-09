@@ -7,10 +7,13 @@
 - `pipeline.execute(..., semantic_provider=None)`：旁路双轨，落盘
   `semantic_rule.json` / `semantic_schema.json` / `semantic_diff.json`；默认 None 时行为与产物不变。
 - `run --semantic {none,llm}`；配置缺失/请求失败/契约失败/预算熔断均逐表降级到规则语义。
-- 提示词升级 `analysis_plan_v2`（relations、anomalies、严格字段覆盖），适配器增加覆盖校验 + 一次重试。
+- 提示词升级 `analysis_plan_v3`（relations、anomalies、严格字段覆盖、基数判定规则）；
+  载荷新增 `non_empty/unique_count/unique_ratio`（只回传计数，不回传明细）；
+  适配器增加覆盖校验 + 一次重试。
 - 成本：单表 5 元 + 整批 20 元护栏。
-- 一致率实测（真实调用，golden 为草稿）：3 样本 18/20 = 90%，date/metric/id 零错误，
-  异常召回 100%，总成本 0.0354 元。详见 [docs/llm-stage1-notes.md](docs/llm-stage1-notes.md)。
+- 一致率实测（golden 经审查方确认）：3 样本 **20/20 = 100%**，date/metric/id 零错误，
+  异常召回 100%，单次评估成本 0.0464 元；03 的高基数文本误判已修正（8/10 → 10/10）。
+  原始结果见 [docs/llm-semantics-eval.json](docs/llm-semantics-eval.json)。
 
 ## 1.0.3-dev — LLM PoC（未接入主流程）
 

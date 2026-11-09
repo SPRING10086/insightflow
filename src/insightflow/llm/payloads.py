@@ -78,6 +78,18 @@ def infer_dtype(values: Iterable[Any]) -> str:
     return "text"
 
 
+def _field_statistics(rows: list[dict[str, Any]], name: str) -> dict[str, Any]:
+    """Aggregate cardinality hints (counts only — never values) for role judgement."""
+    raw = [row.get(name) for row in rows]
+    non_empty = [str(value).strip() for value in raw if value not in (None, "") and str(value).strip()]
+    unique = len(set(non_empty))
+    return {
+        "non_empty": len(non_empty),
+        "unique_count": unique,
+        "unique_ratio": round(unique / len(non_empty), 4) if non_empty else 0.0,
+    }
+
+
 def build_payload(
     table_name: str,
     source: str,
@@ -93,7 +105,9 @@ def build_payload(
     fields = []
     for name in field_names:
         column = [row.get(name) for row in rows]
-        fields.append({"name": name, "dtype": infer_dtype(column)})
+        field_info = {"name": name, "dtype": infer_dtype(column)}
+        field_info.update(_field_statistics(rows, name))
+        fields.append(field_info)
 
     samples = []
     for row in sample_rows:
