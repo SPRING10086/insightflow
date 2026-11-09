@@ -9,7 +9,7 @@
   `run --plan {none,llm}`；异常逐级降级到规则计划。
 - 3 个验收样本 + 2 个真实工商小表（2018/2019 上海前 300 行）双轨对照完成；
   真实 2018 样本语义轨因模型 JSON 不闭合降级（如实记录）。
-- 测试 187 项全绿。详见 [docs/llm-stage2-notes.md](docs/llm-stage2-notes.md)。
+- 测试 202 项全绿。详见 [docs/llm-stage2-notes.md](docs/llm-stage2-notes.md)。
 
 ## 1.0.4-dev — LLM 阶段 1：语义 Schema 双轨接入
 

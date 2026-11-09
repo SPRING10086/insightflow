@@ -68,10 +68,14 @@
 
 ```text
 python -m unittest discover -s tests
-Ran 187 tests  OK        （阶段 1 的 174 + 13 计划/闭环/降级/CLI）
+Ran 202 tests  OK        （阶段 1 的 174 + 28 计划/闭环/降级/CLI/适配器单测）
 ```
 
-新增 13 项：计划契约（合法、幻觉字段、text/id 当指标、metric 当维度、空风险、数据槽、业务数字、histogram 例外）、diff 计算、管线双轨落盘且数字不变、计划故障降级、干净数据风险陈述、CLI 无配置降级。
+新增 28 项：计划契约（合法、幻觉字段、text/id 当指标、metric 当维度、空风险、数据槽、业务数字、histogram 例外）、
+diff 计算、管线双轨落盘且数字不变、计划故障降级、干净数据风险陈述、CLI 无配置降级、
+`planning` 闭环全分支、规则计划产物与序列化、计划适配器（成功/重试/失败/预算）。
+
+新增模块行覆盖（纯 Python tracer 定向测量）：`planning.py` 97.1%、`llm/plan_contracts.py` 93.0%、`llm/plan_adapter.py` 95.9%。
 
 ## 7. 未做 / 待审查方
 
