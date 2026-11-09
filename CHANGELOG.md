@@ -1,12 +1,21 @@
 # Changelog
 
-## 1.0.9-dev — LLM 阶段 5a-1：统一配置
+## 1.0.9-dev — LLM 阶段 5a：工程可靠性
+
+### 5a-1 统一配置
 
 - 新增 `LLMSettings`（四个开关 + 总开关、预算、超时、沙箱内存/行数、重试、长 prompt 预警），
   `Settings.llm` 为唯一事实源；默认全关，非法/越界/未知键 fail-closed。
 - CLI 四个 LLM 开关缺省改为“读配置”，显式值只覆盖本次运行、不写回配置。
 - 预算/超时/内存/重试从配置注入 provider 构建；`config.example.json` 增加 `llm` 块与注释性默认值。
 - 测试 260 项。详见 [docs/llm-stage5-notes.md](docs/llm-stage5-notes.md)。
+
+### 5a-2 打包冒烟
+
+- 新增 `scripts/smoke_portable_llm.py`：包内解释器 + 干净环境验证 17 项（解释器/秘密/来源/依赖/worker/四开关/配置驱动）。
+- **修复分发包泄漏密钥**：`dist/app/.env` 曾被打包，构建脚本现排除 `.env`/`.env.*`，冒烟硬断言无 `.env` 与 `sk-` 串。
+- `--narrative` 降级文案统一为“降级”，便于自动化断言。
+- 新增 `tests/test_packaging.py` 防泄漏回归。测试 262 项。
 
 ## 1.0.8-dev — LLM 阶段 4：可视化 HTML 叙事
 

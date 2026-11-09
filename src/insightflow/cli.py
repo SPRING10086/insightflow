@@ -214,7 +214,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         try:
             narrative_provider = build_narrative_provider("llm", **semantic_kwargs)
         except Exception as exc:  # noqa: BLE001
-            _error(f"叙事提供者不可用，已回退规则洞察：{exc}")
+            _error(f"叙事提供者不可用，已降级为规则洞察：{exc}")
 
     record = execute(
         settings,

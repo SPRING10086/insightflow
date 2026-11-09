@@ -36,3 +36,45 @@ Ran 260 tests  OK
 
 - 密钥仍只来自环境变量/`.env`，不进入 `config.json`；GUI 只显示已配置状态（5b）。
 - 请求超时/传输重试的重试策略细节在 5a-3 统一并补统计。
+
+## 5a-2 打包冒烟（2026-11-09）
+
+### 构建
+
+- `scripts/build_portable.ps1 -SkipSmoke` 真实构建 `dist/InsightFlow`：**198 MB**，包内解释器 3.10.4、pandas 2.3.3 / numpy 2.2.6。
+- 冒烟用**包内解释器**运行：`dist\InsightFlow\python\python.exe scripts\smoke_portable_llm.py`。
+
+### 关键发现并修复：分发包曾携带 `.env`
+
+首次构建后检查发现 `dist/app/.env`（732 字节，含真实 API Key）被打进便携包。
+- 修复：构建脚本 `/XF` 增加 `.env`、`.env.*`；
+- 冒烟新增两项硬断言：`no_dotenv_in_bundle`、`no_api_key_in_bundle`（扫描 app 内文本文件中的 `sk-` 长串）；
+- 重建后两项均 PASS，`dist/app` 下只剩 `.env.example`。
+
+### 冒烟检查（17 项，全 PASS，41.5 秒）
+
+| 类别 | 检查 |
+|---|---|
+| 解释器 | 包内解释器存在、`sys.executable` 指向包内、Python 3.10.4 |
+| 秘密 | 无 `.env`、无 `sk-` 密钥串 |
+| 来源 | `insightflow` 从 `dist/app/src` 导入；`sys.path` 不含仓库 `src` |
+| 依赖 | `requirements.lock.txt` 存在，pandas/numpy/openpyxl/xlrd 版本逐项一致 |
+| worker | 起进程、最小聚合 total=600、分组正确、**Job Object 可用** |
+| 四开关 | `--semantic/--plan/--execute/--narrative llm` 无密钥均安全降级、exit=0、报告生成、无占位符残留 |
+| 配置驱动 | 配置文件开启 semantic（不带 CLI 开关）同样触发并降级 |
+
+**干净环境**：每个子进程只注入 `SystemRoot/TEMP/TMP/USERPROFILE` + 最小 `PATH`，并显式清空
+`PYTHONPATH/PYTHONHOME/PYTHONSTARTUP`；`PYTHONPATH` 仅指向包内 `app/src`，`PYTHONHOME` 指向包内 `python`。
+
+原始证据：[docs/llm-stage5-smoke.json](llm-stage5-smoke.json)。
+
+### 验证
+
+```text
+Ran 262 tests  OK        （260 + 2 打包防泄漏回归）
+```
+
+### 未解决
+
+- 分发包**未签名**，也**未在干净虚拟机**上验证（checklist 与 `verify_release.ps1` 在 5a 收尾交付）。
+- 冒烟覆盖无密钥降级路径；有密钥的真实调用另在有 `.env` 的环境抽测，密钥不进分发包。

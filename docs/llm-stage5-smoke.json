@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-11-09T23:27:08",
+  "duration_seconds": 41.5,
+  "python": "3.10.4",
+  "executable": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe",
+  "passed": 17,
+  "failed": 0,
+  "checks": [
+    {
+      "check": "bundled_python_exists",
+      "ok": true,
+      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe"
+    },
+    {
+      "check": "running_on_bundled_interpreter",
+      "ok": true,
+      "detail": "sys.executable=C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe"
+    },
+    {
+      "check": "python_310",
+      "ok": true,
+      "detail": "3.10.4"
+    },
+    {
+      "check": "no_dotenv_in_bundle",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "check": "no_api_key_in_bundle",
+      "ok": true,
+      "detail": "none"
+    },
+    {
+      "check": "package_from_bundle",
+      "ok": true,
+      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\app\\src\\insightflow\\__init__.py"
+    },
+    {
+      "check": "no_checkout_src_on_path",
+      "ok": true,
+      "detail": "sys.path clean"
+    },
+    {
+      "check": "lock_file_present",
+      "ok": true,
+      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\app\\requirements.lock.txt"
+    },
+    {
+      "check": "versions_match_lock",
+      "ok": true,
+      "detail": "ok"
+    },
+    {
+      "check": "worker_runs",
+      "ok": true,
+      "detail": "{'total': 600.0}"
+    },
+    {
+      "check": "worker_groups",
+      "ok": true,
+      "detail": "[['A', 300.0], ['B', 300.0]]"
+    },
+    {
+      "check": "memory_guard_job_available",
+      "ok": true,
+      "detail": "job=True"
+    },
+    {
+      "check": "switch_semantic_degrades_safely",
+      "ok": true,
+      "detail": "exit=0 reports=1 degraded=True"
+    },
+    {
+      "check": "switch_plan_degrades_safely",
+      "ok": true,
+      "detail": "exit=0 reports=1 degraded=True"
+    },
+    {
+      "check": "switch_execute_degrades_safely",
+      "ok": true,
+      "detail": "exit=0 reports=1 degraded=True"
+    },
+    {
+      "check": "switch_narrative_degrades_safely",
+      "ok": true,
+      "detail": "exit=0 reports=1 degraded=True"
+    },
+    {
+      "check": "config_driven_switch_degrades",
+      "ok": true,
+      "detail": "exit=0 degraded=True"
+    }
+  ]
+}
