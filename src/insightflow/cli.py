@@ -24,7 +24,7 @@ from .scheduler import (
     remove_windows_task,
     run_daemon,
 )
-from .semantic_assembly import build_semantic_provider
+from .semantic_assembly import build_plan_provider, build_semantic_provider
 from .utils import jsonable
 
 
@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["none", "llm"],
         default="none",
         help="语义 Schema 提供者：none=规则（默认）；llm=旁路调用，失败自动降级规则",
+    )
+    run.add_argument(
+        "--plan",
+        choices=["none", "llm"],
+        default="none",
+        help="分析计划提供者：none=规则（默认）；llm=旁路生成计划，失败自动降级规则计划",
     )
 
     scan = subparsers.add_parser("scan", parents=[common], help="只扫描与预览，不生成报告")
@@ -134,6 +140,15 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
             provider = build_semantic_provider(semantic_kind)
         except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
             _error(f"语义提供者不可用，已降级为规则口径：{exc}")
+
+    plan_provider = None
+    plan_kind = getattr(args, "plan", "none")
+    if plan_kind and plan_kind != "none":
+        try:
+            plan_provider = build_plan_provider(plan_kind)
+        except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
+            _error(f"计划提供者不可用，已降级为规则计划：{exc}")
+
     record = execute(
         settings,
         target_date=args.date,
@@ -141,6 +156,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         force=args.force,
         source_dir=args.source,
         semantic_provider=provider,
+        plan_provider=plan_provider,
     )
     if args.json:
         print(json.dumps(jsonable(record), ensure_ascii=False, indent=2))

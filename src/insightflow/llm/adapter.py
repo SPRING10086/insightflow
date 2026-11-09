@@ -75,7 +75,7 @@ class LLMSemanticProvider:
 
         result = None
         last_error = ""
-        for attempt in range(2):
+        for attempt in range(3):
             content, usage = client.complete(messages)
             try:
                 parsed = parse_result(content, usage)
@@ -87,14 +87,15 @@ class LLMSemanticProvider:
                     raise CoverageError(missing, extra)
             except (ContractError, CoverageError) as exc:
                 last_error = str(exc)
-                if attempt == 1:
+                if attempt == 2:
                     raise
                 messages = messages + [
                     {
                         "role": "user",
                         "content": (
                             f"上次输出未通过校验：{exc}。请严格为输入中的每个字段输出且仅输出一条记录，"
-                            "字段名逐字一致，只输出 JSON 对象。"
+                            "字段名逐字一致；JSON 必须完整闭合（大括号成对），字符串内不要有未转义引号或换行；"
+                            "只输出 JSON 对象。"
                         ),
                     }
                 ]

@@ -41,6 +41,7 @@ from .planner import build_plan, effective_fields
 from .readers import read_sources
 from .report import ReportError, render_report
 from .schema import detect_schema
+from .planning import PLAN_VERSION, PlanArtifact, plan_diff, rule_plan_artifact, save_plan_artifacts
 from .semantic import (
     ARTIFACT_VERSION,
     SemanticArtifact,
@@ -140,6 +141,7 @@ def execute(
     source_dir: Path | str | None = None,
     on_step: Callable[[str, str], None] | None = None,
     semantic_provider: Any | None = None,
+    plan_provider: Any | None = None,
 ) -> RunRecord:
     """Run the full pipeline once and always return a structured record.
 
@@ -152,6 +154,10 @@ def execute(
     the rule schema and the provider schema are both persisted and diffed, but
     the report still consumes the rule schema (dual-track bypass).  ``None`` is
     the default and keeps every artifact byte-for-byte unchanged.
+
+    ``plan_provider`` enables the optional stage-2 plan track.  It receives the
+    stage-1 semantic schema (LLM track when available, rule track otherwise),
+    writes plan/rule/LLM/diff artifacts, and never drives the report.
     """
     settings = settings or load_settings()
     settings.ensure_runtime_dirs()
@@ -362,6 +368,30 @@ def execute(
             f"主维度={plan.primary_dimension or '无'}；启用 {sum(1 for s in plan.steps if s.enabled)} 项。",
         )
 
+        # 6.5) Optional LLM plan bypass (dual-track, never drives the report).
+        plan_bundle: dict[str, Any] | None = None
+        if plan_provider is not None:
+            step_start = time.perf_counter()
+            plan_bundle = _build_plan_bundle(
+                plan_provider,
+                semantic_bundle,
+                prepared,
+                analysis_fields,
+                plan,
+                cleaning_report,
+                settings,
+                record,
+                logger,
+            )
+            artifact = plan_bundle["llm"]
+            _add_step(
+                record,
+                "分析计划（旁路）",
+                step_start,
+                f"来源={artifact.source_kind}；指标 Jaccard={plan_bundle['diff']['metrics']['jaccard']:.2f}；"
+                f"成本 {artifact.cost_cny:.4f} 元。",
+            )
+
         # 7) Analysis
         step_start = time.perf_counter()
         result = analyze(
@@ -385,6 +415,8 @@ def execute(
         _write_artifacts(day_dir, result, plan, cleaned, cleaning_report, analysis_fields)
         if semantic_bundle is not None:
             _persist_semantic(day_dir, semantic_bundle, record)
+        if plan_bundle is not None:
+            _persist_plans(day_dir, plan_bundle, record)
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))
@@ -570,6 +602,90 @@ def _persist_semantic(day_dir: Path, bundle: dict[str, Any], record: RunRecord) 
         "role_agreement": diff["role_agreement"],
         "unit_agreement": diff["unit_agreement"],
         "key_role_errors": len(diff["key_role_errors"]),
+        "cost_cny": round(artifact.cost_cny, 6),
+        "latency_ms": artifact.latency_ms,
+        "files": [path.name for path in written],
+    }
+
+
+def _semantic_for_plan(semantic_bundle: dict[str, Any] | None, prepared: dict[str, Any], generated_at: str):
+    """The LLM semantic artifact if the stage-1 bypass ran, else the rule one."""
+    if semantic_bundle:
+        return semantic_bundle.get("provider") or semantic_bundle.get("rule")
+    return rule_artifact(prepared.get("table_schemas") or [], generated_at=generated_at)
+
+
+def _build_plan_bundle(
+    plan_provider: Any,
+    semantic_bundle: dict[str, Any] | None,
+    prepared: dict[str, Any],
+    fields: dict[str, Any],
+    rule_plan: Any,
+    cleaning: Any,
+    settings: Any,
+    record: RunRecord,
+    logger: logging.Logger,
+) -> dict[str, Any]:
+    """Build rule plan artifact, ask the provider, and fall back on any failure."""
+    generated_at = now_local().isoformat(timespec="seconds")
+    rule = rule_plan_artifact(rule_plan, fields, cleaning, settings, generated_at=generated_at)
+
+    source = _semantic_for_plan(semantic_bundle, prepared, generated_at)
+    seen: dict[str, Any] = {}
+    ordered: list[Any] = []
+    for table in source.tables:
+        for item in table.fields:
+            if item.name not in seen:
+                seen[item.name] = item
+                ordered.append(item)
+    anomalies = [
+        {"table": table.table, **item}
+        for table in source.tables
+        for item in (getattr(table, "anomalies", None) or [])
+    ]
+
+    try:
+        result = plan_provider.plan(ordered, anomalies, {"table_count": len(source.tables)})
+        llm = PlanArtifact(
+            version=PLAN_VERSION,
+            prompt_version=result.prompt_version,
+            generated_at=generated_at,
+            provider=getattr(plan_provider, "name", "llm"),
+            source_kind=result.source_kind,
+            table="dataset",
+            plan=result.draft,
+            cost_cny=float(result.cost_cny or 0.0),
+            latency_ms=int(result.latency_ms or 0),
+        )
+    except Exception as exc:  # noqa: BLE001 - every failure degrades, never aborts
+        message = f"{type(exc).__name__}: {exc}"
+        record.warnings.append(f"[plan_fallback] {message}")
+        logger.warning("plan provider fallback: %s", message)
+        llm = PlanArtifact(
+            version=PLAN_VERSION,
+            prompt_version="rules",
+            generated_at=generated_at,
+            provider=getattr(plan_provider, "name", "llm"),
+            source_kind="fallback",
+            table="dataset",
+            plan=rule.plan,
+            error=message[:300],
+        )
+
+    return {"rule": rule, "llm": llm, "diff": plan_diff(rule, llm)}
+
+
+def _persist_plans(day_dir: Path, bundle: dict[str, Any], record: RunRecord) -> None:
+    written = save_plan_artifacts(day_dir, bundle["rule"], bundle["llm"], bundle["diff"])
+    artifact = bundle["llm"]
+    diff = bundle["diff"]
+    record.metadata["plan"] = {
+        "provider": artifact.provider,
+        "source_kind": artifact.source_kind,
+        "prompt_version": artifact.prompt_version,
+        "metrics_jaccard": diff["metrics"]["jaccard"],
+        "dimensions_jaccard": diff["dimensions"]["jaccard"],
+        "charts_jaccard": diff["charts"]["jaccard"],
         "cost_cny": round(artifact.cost_cny, 6),
         "latency_ms": artifact.latency_ms,
         "files": [path.name for path in written],

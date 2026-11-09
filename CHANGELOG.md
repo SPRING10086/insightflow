@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.5-dev — LLM 阶段 2：分析计划双轨
+
+- 新增 `planning.py`（`PlanProvider` 契约、计划产物、字段闭环校验、双轨 diff、落盘）。
+- 新增 `llm/plan_contracts.py` + `llm/plan_adapter.py` + `prompts/plan_v1.md`：LLM 计划生成，
+  结构/空数据槽/业务数字校验，字段引用闭环（幻觉字段、text/id 当指标、metric 当维度一律拒绝）。
+- `pipeline.execute(..., plan_provider=None)` 写 `plan_rule.json` / `plan_llm.json` / `plan_diff.json`；
+  `run --plan {none,llm}`；异常逐级降级到规则计划。
+- 3 个验收样本 + 2 个真实工商小表（2018/2019 上海前 300 行）双轨对照完成；
+  真实 2018 样本语义轨因模型 JSON 不闭合降级（如实记录）。
+- 测试 187 项全绿。详见 [docs/llm-stage2-notes.md](docs/llm-stage2-notes.md)。
+
 ## 1.0.4-dev — LLM 阶段 1：语义 Schema 双轨接入
 
 - 新增 `semantic.py`（中立 `SemanticProvider` 契约 + 版本化产物 + 差异计算）、

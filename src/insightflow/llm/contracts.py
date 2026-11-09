@@ -148,10 +148,15 @@ def _parse_chart(item: dict[str, Any], index: int) -> ChartSkeleton:
     )
 
 
+def check_no_business_numbers(node: Any) -> None:
+    """Public wrapper used by both the semantic and the plan contract."""
+    _check_no_business_numbers(node)
+
+
 def parse_result(text: str, usage: dict[str, int] | None = None) -> LLMResult:
     """Parse and validate the model's JSON answer; raise ``ContractError`` otherwise."""
     try:
-        data = json.loads(text)
+        data = json.loads(text, strict=False)
     except (TypeError, json.JSONDecodeError) as exc:
         raise ContractError(f"输出不是合法 JSON：{exc}") from exc
     _require(isinstance(data, dict), "输出顶层必须是对象")
