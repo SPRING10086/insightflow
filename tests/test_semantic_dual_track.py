@@ -279,6 +279,34 @@ class PipelineDualTrackTests(unittest.TestCase):
         self.assertEqual(baseline["kpis"], after["kpis"])
         self.assertEqual(baseline["target_totals"], after["target_totals"])
 
+    def test_semantic_sampling_uses_all_raw_columns(self):
+        import pandas as pd
+
+        from insightflow.models import FieldSpec
+        from insightflow.pipeline import _build_semantic_bundle
+
+        frame = pd.DataFrame([{"日期": "2026-11-07", "销售额": "100", "登记机关": "杭州"}])
+        table = SimpleNamespace(
+            source=SimpleNamespace(relative_path="a.csv"),
+            sheet_label="CSV",
+            frame=frame,
+        )
+        schema = SimpleNamespace(
+            fields={"revenue": FieldSpec(original="销售额", canonical="revenue", label="销售额", kind="metric")}
+        )
+        seen: list[list[str]] = []
+
+        class RecordingProvider:
+            name = "recording"
+
+            def describe(self, sample):
+                seen.append(list(sample.field_names))
+                return ProviderTableResult(fields=[], prompt_version="x")
+
+        record = SimpleNamespace(warnings=[])
+        _build_semantic_bundle(RecordingProvider(), {"table_schemas": [(table, schema)]}, record, logging.getLogger("t"))
+        self.assertEqual(seen, [["日期", "销售额", "登记机关"]])
+
     def test_provider_failure_falls_back_and_keeps_run_successful(self):
         tmp = _project()
         self.addCleanup(_cleanup, tmp)

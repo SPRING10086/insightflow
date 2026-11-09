@@ -1,0 +1,86 @@
+{
+  "sample": "03_工商登记_合成样本.csv",
+  "runs": [
+    {
+      "run": 1,
+      "status": "success",
+      "semantic_source": "llm",
+      "plan_source": "llm",
+      "plan_error": "",
+      "metrics": [
+        "销售额",
+        "注册资本(万元)"
+      ],
+      "dimensions": [
+        "登记机关",
+        "行业代码",
+        "经营状态"
+      ],
+      "charts": [
+        "bar",
+        "bar",
+        "bar",
+        "histogram",
+        "scatter"
+      ],
+      "risks": 6,
+      "dimension_jaccard": 0.0,
+      "cost_cny": 0.008396,
+      "latency_ms": 8517
+    },
+    {
+      "run": 2,
+      "status": "success",
+      "semantic_source": "llm",
+      "plan_source": "llm",
+      "plan_error": "",
+      "metrics": [
+        "注册资本(万元)",
+        "销售额"
+      ],
+      "dimensions": [
+        "登记机关",
+        "行业代码",
+        "经营状态"
+      ],
+      "charts": [
+        "bar",
+        "bar",
+        "histogram",
+        "donut",
+        "scatter"
+      ],
+      "risks": 5,
+      "dimension_jaccard": 0.0,
+      "cost_cny": 0.008384,
+      "latency_ms": 8364
+    },
+    {
+      "run": 3,
+      "status": "success",
+      "semantic_source": "llm",
+      "plan_source": "llm",
+      "plan_error": "",
+      "metrics": [
+        "销售额",
+        "注册资本(万元)"
+      ],
+      "dimensions": [
+        "登记机关",
+        "经营状态",
+        "行业代码"
+      ],
+      "charts": [
+        "bar",
+        "bar",
+        "bar",
+        "histogram",
+        "scatter"
+      ],
+      "risks": 6,
+      "dimension_jaccard": 0.0,
+      "cost_cny": 0.008746,
+      "latency_ms": 8687
+    }
+  ]
+}

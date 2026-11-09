@@ -69,6 +69,14 @@ class ClosureTests(unittest.TestCase):
             ROLES,
         )
 
+    def test_histogram_and_scatter_reject_categorical_x(self):
+        for chart_type in ("histogram", "scatter"):
+            with self.assertRaises(PlanValidationError):
+                planning.validate_plan_closure(
+                    _draft(charts=[PlanChart(chart_id="c", chart_type=chart_type, title="t", x_field="区域")]),
+                    ROLES,
+                )
+
 
 def _rule_plan():
     steps = [

@@ -133,13 +133,15 @@ def validate_plan_closure(draft: PlanDraft, roles: dict[str, str]) -> None:
                 errors.append(f"图表 {chart.chart_id} 的 y 轴「{chart.y_field}」不是 metric")
         if chart.x_field:
             role = roles.get(chart.x_field)
-            allowed_x = {"dimension", "date"}
-            # Histograms and scatter plots put a measure on the x axis by design.
-            if chart.chart_type in {"histogram", "scatter"}:
-                allowed_x.add("metric")
             if role is None:
                 errors.append(f"图表 {chart.chart_id} 的 x 轴引用不存在字段：{chart.x_field}")
-            elif role not in allowed_x:
+            elif chart.chart_type in {"histogram", "scatter"}:
+                # Distribution/scatter charts put a measure on x by design.
+                if role != "metric":
+                    errors.append(
+                        f"图表 {chart.chart_id} 是 {chart.chart_type}，x 轴「{chart.x_field}」必须是 metric（role={role}）"
+                    )
+            elif role not in {"dimension", "date"}:
                 errors.append(f"图表 {chart.chart_id} 的 x 轴「{chart.x_field}」不可分组（role={role}）")
         if chart.series_field:
             role = roles.get(chart.series_field)

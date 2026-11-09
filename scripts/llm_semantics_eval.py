@@ -55,6 +55,13 @@ def evaluate_one(provider: LLMSemanticProvider, csv_path: Path, expected: dict[s
     ]
     predicted_fields = {str(item.get("field", "")) for item in result.anomalies}
     recall = [name for name in anomalies_expected if any(_overlaps(name, hit) for hit in predicted_fields)]
+    if not predicted_fields:
+        precision = 1.0
+    elif not anomalies_expected:
+        precision = 0.0
+    else:
+        matching = [hit for hit in predicted_fields if any(_overlaps(name, hit) for name in anomalies_expected)]
+        precision = len(matching) / len(predicted_fields)
     return {
         "sample": csv_path.name,
         "fields_total": len(expected),
@@ -65,6 +72,7 @@ def evaluate_one(provider: LLMSemanticProvider, csv_path: Path, expected: dict[s
         "anomalies_expected": anomalies_expected,
         "anomalies_predicted": sorted(predicted_fields),
         "anomaly_recall": round(len(recall) / max(1, len(anomalies_expected)), 4) if anomalies_expected else 1.0,
+        "anomaly_precision": round(precision, 4),
         "cost_cny": round(result.cost_cny, 6),
         "latency_ms": latency_ms,
         "prompt_version": result.prompt_version,
@@ -114,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         "role_accuracy": round(correct / total_fields, 4) if total_fields else 0.0,
         "key_role_errors": [err for row in rows for err in row.get("key_role_errors", [])],
         "anomaly_recall_avg": round(sum(row.get("anomaly_recall", 0) for row in rows) / len(rows), 4) if rows else 0.0,
+        "anomaly_precision_avg": round(sum(row.get("anomaly_precision", 0) for row in rows) / len(rows), 4) if rows else 0.0,
         "cost_total_cny": round(total_cost, 6),
         "latency_avg_ms": round(sum(row.get("latency_ms", 0) for row in rows) / len(rows)) if rows else 0,
         "rows": rows,
@@ -128,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"[{row['sample']}] 角色 {row['fields_correct']}/{row['fields_total']}"
             f" = {row['role_accuracy']:.1%} · 关键错误 {len(row['key_role_errors'])}"
-            f" · 异常召回 {row['anomaly_recall']:.0%} · {row['cost_cny']:.4f} 元 · {row['latency_ms']} ms"
+            f" · 异常召回 {row['anomaly_recall']:.0%} · 精确率 {row['anomaly_precision']:.0%}"
+            f" · {row['cost_cny']:.4f} 元 · {row['latency_ms']} ms"
         )
     print(
         f"合计：{summary['samples']} 个样本 · 角色一致率 {summary['role_accuracy']:.1%}"

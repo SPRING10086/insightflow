@@ -149,6 +149,14 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001 - degrade instead of blocking the run
             _error(f"计划提供者不可用，已降级为规则计划：{exc}")
 
+    # A plan must be grounded in the semantic schema; without it the plan would
+    # only see the rule-filtered columns, which defeats the whole bypass.
+    if plan_provider is not None and provider is None:
+        try:
+            provider = build_semantic_provider("llm")
+        except Exception as exc:  # noqa: BLE001
+            _error(f"计划需要语义 Schema，但语义提供者不可用：{exc}")
+
     record = execute(
         settings,
         target_date=args.date,

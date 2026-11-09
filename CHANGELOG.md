@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.6-dev — LLM 阶段 2 复核修正：语义输入绕开规则过滤
+
+- **关键修正**：语义采样改为使用**原始表全列**（此前取自规则 `schema.fields`，高基数文本占满维度名额，
+  03 的登记机关/行业代码/经营状态被过滤掉，模型看不到）。新增单测锁定该行为。
+- `--plan llm` 在无语义 provider 时自动补建，避免计划仍然基于被过滤的规则语义。
+- 图表角色校验收紧：`histogram` x 必须 metric、`scatter` x/y 必须 metric，其余类别图 x 必须 dimension/date。
+- 提示词：异常识别从"宁可多报"改为"有证据才报"；干净样本输出空 anomalies（01 精确率 100%）。
+- 03 连续 3 次计划一次通过并命中三个真实维度（`docs/llm-plan-stability.json`）。
+- 文档更正此前"LLM 补充维度"的不实表述。测试 204 项。
+
 ## 1.0.5-dev — LLM 阶段 2：分析计划双轨
 
 - 新增 `planning.py`（`PlanProvider` 契约、计划产物、字段闭环校验、双轨 diff、落盘）。

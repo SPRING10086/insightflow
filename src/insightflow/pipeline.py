@@ -525,11 +525,14 @@ def _build_semantic_bundle(
     provider_name = str(getattr(provider, "name", "llm"))
 
     for table, schema in table_schemas:
+        # The LLM track must see every raw column: the rule schema drops fields
+        # (e.g. only keeps a few dimensions), and hiding those columns from the
+        # model would make the "flexible" bypass as rigid as the rules.
         sample = TableSample(
             name=table.source.relative_path,
             source=table.source.relative_path,
             sheet=table.sheet_label,
-            field_names=[field.original for field in schema.fields.values()],
+            field_names=[str(column) for column in table.frame.columns],
             rows=table.frame.head(20).to_dict("records"),
         )
         try:

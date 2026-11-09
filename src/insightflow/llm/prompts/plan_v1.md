@@ -47,6 +47,13 @@
 5. `quality_risks` 不得为空；宁可保守，也不得只给乐观计划。
 6. 只输出 JSON 对象，不要解释文字或 Markdown 代码块。
 
+## 图表类型与轴的角色（会被校验）
+
+- `bar / line / pie / donut / pareto / heatmap`：x 轴 = dimension 或 date。
+- `histogram`：x 轴 = **metric**（看分布），不要用维度。
+- `scatter`：x 轴和 y 轴都必须是 **metric**。
+- 任何图表的 y 轴都必须是 metric；`series_field` 必须是 dimension。
+
 ## 常见错误（会被校验直接拒绝）
 
 - ❌ 把 metric 放 x 轴：`{"x_field": "销售额", "y_field": "销售额"}`
