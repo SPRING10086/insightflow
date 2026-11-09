@@ -364,7 +364,35 @@ python -m unittest discover -s tests -v
 
 ---
 
-## 15. 许可与声明
+## 15. 图形操作端（GUI）
+
+给不接触命令行的操作员用的本地窗口，与命令行共用同一套 `execute()`：
+
+```powershell
+# 无控制台启动（推荐给操作员）
+.\启动操作端(无控制台).vbs
+
+# 排障用（保留控制台与错误信息）
+.\启动操作端.bat
+
+# 开发调试
+$env:PYTHONPATH="src"; python -m insightflow.gui
+```
+
+三步：放数据（或「选择文件…」）→ 刷新清单 → 确认目标日期与日期口径 → 开始分析；
+完成后在「结果」区打开清洗数据/报告，质量分与五类告警说明哪些数字要谨慎引用。
+
+免安装分发包（随包 Python，操作员无需装环境）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_portable.ps1
+# 产物：dist\InsightFlow\（双击 启动操作端.vbs）
+```
+
+界面分层：`gui/services.py` 是唯一调用核心的模块，`gui/app.py` 与 `gui/worker.py` 只做编排与展示；
+详见 [docs/architecture.md](docs/architecture.md) §11 与 [docs/gui-phase4-notes.md](docs/gui-phase4-notes.md)。
+
+## 16. 许可与声明
 
 - 演示数据为合成数据，不代表任何真实企业或业务。
 - ECharts 以 Apache License 2.0 分发，见 [NOTICE.md](NOTICE.md)。

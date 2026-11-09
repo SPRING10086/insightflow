@@ -1,0 +1,33 @@
+name: portable
+
+# NFR-7: build the "unzip and run" bundle on demand (no Python install needed).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install locked dependencies into the build interpreter
+        run: python -m pip install -r requirements.lock.txt
+      - name: Build portable bundle
+        shell: pwsh
+        run: ./scripts/build_portable.ps1 -SkipSmoke
+      - name: Verify the bundled interpreter imports the app
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "$pwd/dist/InsightFlow/app/src"
+          $env:INSIGHTFLOW_HOME = "$pwd/dist/InsightFlow/app"
+          & "$pwd/dist/InsightFlow/python/python.exe" -c "import insightflow, insightflow.gui.app, pandas; print('ok', pandas.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: InsightFlow-portable
+          path: dist/InsightFlow
+          retention-days: 14

@@ -17,4 +17,26 @@ jobs:
       - name: Run unittest suite
         env:
           PYTHONPATH: src
+          PYTHONIOENCODING: utf-8
         run: python -m unittest discover -s tests -v
+
+      # GUI tests are part of the suite above; this step makes the coverage
+      # explicit and keeps the console encoding deterministic.  Tests that need
+      # a desktop session skip themselves when Tk cannot open a window.
+      - name: GUI tests (headless-safe)
+        env:
+          PYTHONPATH: src
+          PYTHONIOENCODING: utf-8
+        run: >
+          python -m unittest
+          tests.test_gui_shell
+          tests.test_gui_stage1
+          tests.test_gui_stage2
+          tests.test_gui_stage3
+          tests.test_gui_stage4
+          -v
+
+      - name: Offline / no-network check
+        env:
+          PYTHONPATH: src
+        run: python -m unittest tests.test_gui_stage4.PackagingAndSafetyTests.test_source_has_no_network_imports -v

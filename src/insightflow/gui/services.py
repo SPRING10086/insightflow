@@ -759,6 +759,31 @@ def scheduler_caption(status: dict[str, Any]) -> str:
     return f"定时任务：未安装（每天 {status.get('schedule_time')} 未生效，可用命令行安装）"
 
 
+def install_schedule(settings: Settings, time_text: str) -> dict[str, Any]:
+    """Install/update the daily Windows task (FR-7.2); never installs silently."""
+    from ..scheduler import install_windows_task, parse_schedule_time
+
+    value = str(time_text or "").strip()
+    try:
+        parse_schedule_time(value)
+    except ValueError as exc:
+        raise ServiceError(f"时间格式应为 HH:MM，例如 09:30（收到 {value!r}）。") from exc
+    ok, detail = install_windows_task(settings, value=value)
+    if not ok:
+        raise ServiceError(f"安装定时任务失败：{detail}")
+    return {"installed": True, "time": value, "detail": detail}
+
+
+def uninstall_schedule(settings: Settings) -> dict[str, Any]:
+    """Remove the daily Windows task (FR-7.2)."""
+    from ..scheduler import remove_windows_task
+
+    ok, detail = remove_windows_task(settings)
+    if not ok:
+        raise ServiceError(f"卸载定时任务失败：{detail}")
+    return {"installed": False, "detail": detail}
+
+
 def package_logs(settings: Settings) -> Path:
     """Bundle logs + environment into one zip for support (FR-8.3)."""
     import zipfile

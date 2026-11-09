@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 from ..config import ConfigError, load_settings
-from ..logging_setup import configure_logging
+from ..logging_setup import configure_logging, get_logger
 from . import services
 from .app import InsightFlowApp
 
@@ -14,13 +16,22 @@ from .app import InsightFlowApp
 def _ensure_standard_streams() -> None:
     """``pythonw.exe`` has no console; logging and prints must not crash.
 
-    Only the missing-stream case is replaced, so a normal ``python.exe`` keeps
-    its console output for troubleshooting.
+    Only the missing-stream case is replaced.  Instead of throwing the output
+    away, it is appended to ``%TEMP%\\insightflow_gui_stderr.log`` so a windowed
+    launch that fails early can still be diagnosed (the bundled launcher uses
+    ``pythonw.exe`` on purpose, to avoid the black console window).
     """
+    if sys.stderr is not None and sys.stdout is not None:
+        return
+    target = Path(tempfile.gettempdir()) / "insightflow_gui_stderr.log"
+    try:
+        handle = open(target, "a", encoding="utf-8", buffering=1)
+    except OSError:
+        handle = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+        sys.stderr = handle
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+        sys.stdout = handle
 
 
 def _enable_dpi_awareness() -> None:
@@ -43,7 +54,7 @@ def _report_startup_error(message: str) -> None:
         root.withdraw()
         messagebox.showerror("InsightFlow 操作端无法启动", message)
         root.destroy()
-    except Exception:  # noqa: BLE001 - last resort, console only
+    except Exception:  # noqa: BLE001 - last resort, console/log only
         print(f"InsightFlow 操作端无法启动：{message}", file=sys.stderr)
 
 
@@ -57,6 +68,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Same logger, same log directory as the CLI and the scheduled task.
     configure_logging(settings)
+    get_logger("insightflow.gui").info(
+        "GUI 启动：python=%s 解释器=%s 配置=%s",
+        sys.version.split()[0],
+        sys.executable,
+        settings.config_path,
+    )
     _enable_dpi_awareness()
 
     app = InsightFlowApp(settings)

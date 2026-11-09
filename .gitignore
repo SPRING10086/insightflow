@@ -25,3 +25,4 @@ my_data/
 
 # Generated demo screenshots are intentionally kept under docs/images/
 !docs/images/
+dist/

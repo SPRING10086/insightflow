@@ -13,7 +13,7 @@ import dataclasses
 import os
 import time
 import tkinter as tk
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -901,7 +901,7 @@ class InsightFlowApp(tk.Tk):
 
         dialog = tk.Toplevel(self)
         dialog.title("管理员设置")
-        dialog.geometry("720x340")
+        dialog.geometry("720x400")
         dialog.transient(self)
         body = ttk.Frame(dialog, padding=12)
         body.pack(fill="both", expand=True)
@@ -914,20 +914,36 @@ class InsightFlowApp(tk.Tk):
         ttk.Label(body, text="输出目录").grid(row=1, column=0, sticky="w", pady=4)
         ttk.Entry(body, textvariable=output_var).grid(row=1, column=1, sticky="ew", pady=4)
 
+        # FR-7.2: graphical install/uninstall of the daily task.
+        time_var = tk.StringVar(value=self.settings.schedule_time)
+        ttk.Label(body, text="每日触发时间").grid(row=2, column=0, sticky="w", pady=4)
+        schedule_row = ttk.Frame(body)
+        schedule_row.grid(row=2, column=1, sticky="w", pady=4)
+        ttk.Entry(schedule_row, textvariable=time_var, width=8).grid(row=0, column=0)
+        ttk.Button(
+            schedule_row, text="安装 / 更新任务",
+            command=lambda: self._install_schedule(time_var.get()),
+        ).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(
+            schedule_row, text="卸载任务",
+            command=self._uninstall_schedule,
+        ).grid(row=0, column=2, padx=(8, 0))
+
         info = "\n".join(
             [
                 f"日志目录：{paths['日志目录']}",
                 f"状态目录：{paths['状态目录']}",
                 f"配置文件：{paths['配置文件']}",
                 services.scheduler_caption(status),
+                f"当前时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}",
             ]
         )
         ttk.Label(body, text=info, style="Hint.TLabel", wraplength=660, justify="left").grid(
-            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
+            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
 
         buttons = ttk.Frame(body)
-        buttons.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(buttons, text="关闭", command=dialog.destroy).grid(row=0, column=0, padx=(0, 6))
         ttk.Button(
             buttons,
@@ -951,6 +967,41 @@ class InsightFlowApp(tk.Tk):
         self._status_var.set(f"设置已保存：{self._display_path(path)}")
         if dialog is not None:
             dialog.destroy()
+        return True
+
+    def _install_schedule(self, time_text: str) -> bool:
+        """FR-7.2: graphical install, always behind an explicit confirmation."""
+        value = str(time_text or "").strip()
+        if not messagebox.askyesno(
+            "安装定时任务",
+            f"将注册 Windows 计划任务：每天 {value} 自动运行一次分析。\n\n"
+            "任务以当前用户身份运行，通常不需要管理员权限。继续吗？",
+        ):
+            return False
+        try:
+            result = services.install_schedule(self.settings, value)
+        except services.ServiceError as exc:
+            messagebox.showerror("安装定时任务失败", str(exc))
+            return False
+        self._refresh_schedule()
+        self._status_var.set(f"定时任务已安装：每天 {result['time']}")
+        return True
+
+    def _uninstall_schedule(self) -> bool:
+        """FR-7.2: uninstall is destructive → confirm first (FR-8.4)."""
+        if not messagebox.askyesno(
+            "卸载定时任务",
+            "将删除每天自动运行的计划任务，之后不会自动生成报告。\n\n继续吗？",
+            icon="warning",
+        ):
+            return False
+        try:
+            services.uninstall_schedule(self.settings)
+        except services.ServiceError as exc:
+            messagebox.showerror("卸载定时任务失败", str(exc))
+            return False
+        self._refresh_schedule()
+        self._status_var.set("定时任务已卸载")
         return True
 
     def _package_logs(self) -> None:
