@@ -122,3 +122,15 @@ Ran 268 tests  OK
 - 执行链路（代码生成）的 JSON 重试固定为 1 次追加（沿用原设计），未使用 `retry.structured_output` 配置；
 - 长 prompt 只预警不截断；截断会改变输入语义，留待后续评估。
 
+## 5a 收尾：发布 checklist 与自动核验（2026-11-10）
+
+- 交付 `docs/release-checklist-llm.md`：签名文件清单与 `signtool` 命令、干净 VM 安装/启动/默认关闭无出站/
+  开关降级/有密钥抽测/卸载检查、记录模板；未完成不得对外分发。
+- 交付 `scripts/verify_release.ps1`：必需文件、无 `.env`/无 `sk-`、版本一致、SHA-256 清单、
+  签名（默认 WARN，`-RequireSignature` 时 FAIL）、冒烟证据（17/17）、VC++ 运行库；有 FAIL 退出码 1。
+- 顺带修复：
+  - 构建脚本不再打包**运维的 `config/config.json`**（避免把本机路径/设置带进分发包），统一用 example 重建；
+  - 清单文件改为 UTF-8 写入，修复中文启动器文件名在哈希校验中被 ASCII 破坏的问题。
+- 本机核验结果：`FAIL=0 WARN=1`（签名跳过，属预期），退出码 0；`-WriteManifest` 生成 9 个文件哈希。
+
+

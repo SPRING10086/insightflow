@@ -25,6 +25,13 @@
 - 长 prompt 超阈值告警（默认 8000 tokens），不截断、不放宽预算。
 - 测试 268 项；便携包冒烟 17/17。
 
+### 5a 收尾：发布 checklist 与核验脚本
+
+- 新增 `docs/release-checklist-llm.md`（签名/干净 VM 可执行清单）与 `scripts/verify_release.ps1`
+  （必需文件、秘密扫描、版本、哈希清单、签名、冒烟、VC++ 自动核验）。
+- 构建脚本不再打包运维 `config/config.json`；哈希清单改 UTF-8，修复中文启动器文件名校验。
+- 本机核验 FAIL=0 / WARN=1（签名跳过），退出码 0。测试 270 项。
+
 ## 1.0.8-dev — LLM 阶段 4：可视化 HTML 叙事
 
 - 新增 `narrative.py`（叙事协议、事实映射、占位符校验/渲染、产物）与

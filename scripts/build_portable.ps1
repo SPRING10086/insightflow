@@ -52,7 +52,7 @@ Step "copy application"
 $appDir = Join-Path $out "app"
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 $appExclude = @(".git", "logs", "state", "output", "dist", "tests", "__pycache__", ".github", "acceptance_data", ".agents", "report", "clean_data", "raw_data", "dax", "verification")
-$appArgs = @($root, $appDir, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1", "/XF", "*.pyc", "*.pyo", ".env", ".env.*")
+$appArgs = @($root, $appDir, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1", "/XF", "*.pyc", "*.pyo", ".env", ".env.*", "config.json")
 foreach ($dir in $appExclude) { $appArgs += @("/XD", $dir) }
 & robocopy @appArgs | Out-Null
 if ($LASTEXITCODE -ge 8) { throw "robocopy app failed: $LASTEXITCODE" }
