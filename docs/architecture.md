@@ -233,7 +233,8 @@ customer_id, order_id, ...
 gui/__main__.py   入口：stderr 兜底、加载配置、DPI、启动门禁
 gui/app.py        主窗口：顶部状态条 + 四分区 + 底部工具条；after() 轮询消息
 gui/worker.py     单工作线程 + queue.Queue；4 种消息（started/progress/done/failed）
-gui/services.py   唯一允许 import 核心的 GUI 模块：预览、文件清单、锁状态、执行
+gui/services.py   唯一允许 import 核心的 GUI 模块：预览、文件清单、锁状态、执行、
+                  质量区（读 metrics.json + cleaned_data 标记）、历史、日期口径持久化
 gui/envcheck.py   锁定环境比对（读 requirements.lock.txt，importlib.metadata 取版本）
 ```
 

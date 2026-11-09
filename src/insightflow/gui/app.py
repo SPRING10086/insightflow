@@ -1,13 +1,15 @@
 """Main window of the InsightFlow desktop operator shell.
 
-Stage 1 wires the main path: put data in → run the real pipeline → open the
-report and cleaned data.  Layering rule (enforced by review): this module and
+Stage 1 wired the main path (put data in → run → open results); stage 2 adds
+the trust layer: date-order choice, quality score, the five alert families, bad
+files, and the run history.  Layering rule (enforced by review): this module and
 ``worker.py`` never import the core package; all business calls go through
 ``insightflow.gui.services``, which in turn calls ``pipeline.execute()``.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import time
 import tkinter as tk
@@ -24,27 +26,17 @@ POLL_MS = 80
 TICK_MS = 200
 FONT_FAMILY = "Microsoft YaHei UI"
 
-ZONES: tuple[tuple[str, str, str], ...] = (
-    (
-        "import",
-        "① 数据导入",
-        "点击「放入待分析数据」打开数据源目录，把 Excel / CSV 拖进去，再回到窗口点「刷新清单」。",
-    ),
-    (
-        "run",
-        "② 运行控制",
-        "确认目标日期后点「开始分析」；进度按 读取 → 清洗 → 分析 → 出报告 四段显示。",
-    ),
-    (
-        "result",
-        "③ 结果",
-        "运行成功后可直接打开清洗数据、报告或报告所在文件夹；失败时会说明原因。",
-    ),
-    (
-        "history",
-        "④ 历史记录（阶段 2）",
-        "最近 N 次运行：时间 / 目标日期 / 状态 / 行数 / 报告入口。对应 FR-6.1。",
-    ),
+#: FR-4.2: explain the ambiguity without inventing terminology.
+AMBIGUITY_HINT = (
+    "日月都 ≤12 的写法有歧义：默认按「月/日/年」（3 月 4 日），欧式数据选「日/月/年」（4 月 3 日），"
+    "也可选「歧义时报错跳过」；跨区域数据建议用 YYYY-MM-DD。"
+)
+
+ZONES: tuple[tuple[str, str], ...] = (
+    ("import", "① 数据导入 · 放入 Excel/CSV"),
+    ("run", "② 运行控制 · 目标日期与日期口径"),
+    ("result", "③ 结果与数据质量 · 质量分与告警"),
+    ("history", "④ 历史记录 · 双击打开报告"),
 )
 
 
@@ -61,6 +53,7 @@ class InsightFlowApp(tk.Tk):
         # Plain data only: services returns dicts, never core objects.
         self.files_summary: dict | None = None
         self.summary: dict | None = None
+        self._history_rows: list[dict] = []
         self._run_started = 0.0
         self._pump_job: str | None = None
         self._elapsed_job: str | None = None
@@ -69,8 +62,13 @@ class InsightFlowApp(tk.Tk):
         self._stage_var = tk.StringVar(value="尚未运行。")
         self._files_var = tk.StringVar(value="尚未刷新。")
         self._date_var = tk.StringVar(value=services.default_target_date(settings).isoformat())
+        self._date_order_var = tk.StringVar(value=settings.date_order)
         self._result_var = tk.StringVar(value=services.result_caption(None))
         self._elapsed_var = tk.StringVar(value="")
+        self._score_grade_var = tk.StringVar(value="未运行")
+        self._score_detail_var = tk.StringVar(value="")
+        self._coverage_var = tk.StringVar(value="")
+        self._history_var = tk.StringVar(value="")
 
         self.title(f"{settings.app_name} 操作端")
         self.geometry("1024x720")
@@ -78,7 +76,7 @@ class InsightFlowApp(tk.Tk):
         self._configure_style()
 
         self.columnconfigure(0, weight=1)
-        for row, weight in ((0, 0), (1, 2), (2, 2), (3, 1), (4, 1), (5, 0)):
+        for row, weight in ((0, 0), (1, 2), (2, 1), (3, 3), (4, 2), (5, 0)):
             self.rowconfigure(row, weight=weight)
 
         self._build_header()
@@ -88,6 +86,8 @@ class InsightFlowApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._pump_job = self.after(POLL_MS, self._pump)
         self.refresh_files()
+        self._render_quality(None)
+        self.refresh_history()
 
     # -- construction ------------------------------------------------------
 
@@ -113,7 +113,7 @@ class InsightFlowApp(tk.Tk):
             return str(path)
 
     def _build_header(self) -> None:
-        header = ttk.Frame(self, padding=(12, 10, 12, 4))
+        header = ttk.Frame(self, padding=(12, 6, 12, 2))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
 
@@ -141,17 +141,14 @@ class InsightFlowApp(tk.Tk):
             header,
             style="Hint.TLabel",
             text=f"项目根：{self.settings.project_root}    生效配置：{self._display_path(self.settings.config_path)}",
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
         ttk.Label(
             header,
             style="Hint.TLabel",
             wraplength=960,
             justify="left",
-            text=(
-                f"运行环境：{self.env.detail}\n"
-                f"解释器：{self.env.interpreter}（Python {self.env.python_version}）"
-            ),
+            text=f"解释器：{self.env.interpreter}（Python {self.env.python_version}）",
         ).grid(row=2, column=0, sticky="w")
 
         if not self.env.trusted:
@@ -162,31 +159,25 @@ class InsightFlowApp(tk.Tk):
                 fg=COLOUR_BAD,
                 anchor="w",
                 padx=8,
-                pady=4,
+                pady=3,
                 font=(FONT_FAMILY, 9),
-            ).grid(row=3, column=0, sticky="ew", pady=(4, 0))
+            ).grid(row=3, column=0, sticky="ew", pady=(2, 0))
 
     def _build_zones(self) -> None:
-        for index, (key, title, hint) in enumerate(ZONES, start=1):
-            frame = ttk.LabelFrame(self, text=title, padding=(10, 6))
-            frame.grid(row=index, column=0, sticky="nsew", padx=12, pady=(0, 6))
+        for index, (key, title) in enumerate(ZONES, start=1):
+            frame = ttk.LabelFrame(self, text=title, padding=(8, 2))
+            frame.grid(row=index, column=0, sticky="nsew", padx=10, pady=(0, 3))
             frame.columnconfigure(0, weight=1)
-            ttk.Label(
-                frame,
-                text=hint,
-                style="Hint.TLabel",
-                wraplength=940,
-                justify="left",
-            ).grid(row=0, column=0, sticky="w")
             self.zones[key] = frame
 
         self._build_import(self.zones["import"])
         self._build_run(self.zones["run"])
         self._build_result(self.zones["result"])
+        self._build_history(self.zones["history"])
 
     def _build_import(self, parent: ttk.LabelFrame) -> None:
         bar = ttk.Frame(parent)
-        bar.grid(row=1, column=0, sticky="ew", pady=(6, 4))
+        bar.grid(row=1, column=0, sticky="ew", pady=(4, 3))
         bar.columnconfigure(2, weight=1)
 
         self._folder_btn = ttk.Button(bar, text="放入待分析数据", command=self._open_source_dir)
@@ -201,7 +192,7 @@ class InsightFlowApp(tk.Tk):
         table.columnconfigure(0, weight=1)
 
         columns = ("name", "type", "size", "modified", "state")
-        self._tree = ttk.Treeview(table, columns=columns, show="headings", height=6, selectmode="browse")
+        self._tree = ttk.Treeview(table, columns=columns, show="headings", height=2, selectmode="browse")
         for column, text, width, anchor in (
             ("name", "文件名", 360, "w"),
             ("type", "类型", 70, "center"),
@@ -222,7 +213,7 @@ class InsightFlowApp(tk.Tk):
 
     def _build_run(self, parent: ttk.LabelFrame) -> None:
         row = ttk.Frame(parent)
-        row.grid(row=1, column=0, sticky="ew", pady=(6, 2))
+        row.grid(row=1, column=0, sticky="ew", pady=(4, 2))
         row.columnconfigure(6, weight=1)
 
         ttk.Label(row, text="目标日期").grid(row=0, column=0, sticky="w")
@@ -245,38 +236,168 @@ class InsightFlowApp(tk.Tk):
         self._progress = ttk.Progressbar(row, mode="determinate", maximum=services.STAGE_TOTAL)
         self._progress.grid(row=0, column=6, sticky="ew", padx=(12, 0))
 
-        info = ttk.Frame(parent)
-        info.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        info.columnconfigure(0, weight=1)
-        ttk.Label(info, textvariable=self._stage_var, style="Status.TLabel", wraplength=780, justify="left").grid(
-            row=0, column=0, sticky="w"
-        )
-        ttk.Label(info, textvariable=self._elapsed_var, style="Hint.TLabel").grid(row=0, column=1, sticky="e")
-
-    def _build_result(self, parent: ttk.LabelFrame) -> None:
-        bar = ttk.Frame(parent)
-        bar.grid(row=1, column=0, sticky="ew", pady=(6, 2))
-        bar.columnconfigure(3, weight=1)
-
-        self._clean_btn = ttk.Button(bar, text="获取清洗后数据", command=self._open_cleaned)
-        self._clean_btn.grid(row=0, column=0, sticky="w")
-        self._report_btn = ttk.Button(bar, text="获取数据报表", command=self._open_report)
-        self._report_btn.grid(row=0, column=1, sticky="w", padx=(6, 0))
-        self._report_dir_btn = ttk.Button(bar, text="报告所在文件夹", command=self._open_report_dir)
-        self._report_dir_btn.grid(row=0, column=2, sticky="w", padx=(6, 0))
+        order = ttk.Frame(parent)
+        order.grid(row=2, column=0, sticky="ew", pady=(2, 0))
+        order.columnconfigure(5, weight=1)
+        ttk.Label(order, text="日期口径").grid(row=0, column=0, sticky="w")
+        self._order_buttons: list[ttk.Radiobutton] = []
+        for index, (value, label) in enumerate(services.DATE_ORDER_LABELS.items(), start=1):
+            button = ttk.Radiobutton(
+                order,
+                text=label,
+                value=value,
+                variable=self._date_order_var,
+                command=self._on_date_order_change,
+            )
+            button.grid(row=0, column=index, sticky="w", padx=(10, 0))
+            self._order_buttons.append(button)
+        ttk.Label(order, textvariable=self._elapsed_var, style="Hint.TLabel").grid(row=0, column=6, sticky="e")
 
         ttk.Label(
             parent,
-            textvariable=self._result_var,
+            text=AMBIGUITY_HINT,
+            style="Hint.TLabel",
+            wraplength=940,
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", pady=(2, 0))
+
+        ttk.Label(
+            parent,
+            textvariable=self._stage_var,
             style="Status.TLabel",
             wraplength=940,
             justify="left",
-        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ).grid(row=4, column=0, sticky="w", pady=(3, 0))
+
+    def _build_result(self, parent: ttk.LabelFrame) -> None:
+        body = ttk.Frame(parent)
+        body.grid(row=1, column=0, sticky="nsew", pady=(4, 0))
+        parent.rowconfigure(1, weight=1)
+        body.rowconfigure(0, weight=1)
+        body.columnconfigure(0, weight=0)
+        body.columnconfigure(1, weight=0)
+        body.columnconfigure(2, weight=1)
+
+        # Column 1: quality score badge (FR-5.1).
+        score_box = ttk.Frame(body)
+        score_box.grid(row=0, column=0, sticky="nw")
+        self._score_label = tk.Label(
+            score_box,
+            text="—",
+            width=6,
+            height=2,
+            bg="#e5e7eb",
+            fg="white",
+            font=(FONT_FAMILY, 18, "bold"),
+        )
+        self._score_label.grid(row=0, column=0)
+        ttk.Label(score_box, textvariable=self._score_grade_var, style="Hint.TLabel").grid(row=1, column=0, pady=(3, 0))
+        ttk.Label(
+            score_box,
+            textvariable=self._score_detail_var,
+            style="Hint.TLabel",
+            wraplength=190,
+            justify="left",
+        ).grid(row=2, column=0, pady=(2, 0))
+
+        # Column 2: result actions + caption.
+        actions = ttk.Frame(body)
+        actions.grid(row=0, column=1, sticky="nw", padx=(12, 14))
+        self._clean_btn = ttk.Button(actions, text="获取清洗后数据", command=self._open_cleaned)
+        self._clean_btn.grid(row=0, column=0, sticky="w")
+        self._report_btn = ttk.Button(actions, text="获取数据报表", command=self._open_report)
+        self._report_btn.grid(row=0, column=1, sticky="w", padx=(4, 0))
+        self._report_dir_btn = ttk.Button(actions, text="报告所在文件夹", command=self._open_report_dir)
+        self._report_dir_btn.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(
+            actions,
+            textvariable=self._result_var,
+            style="Status.TLabel",
+            wraplength=300,
+            justify="left",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+
+        # Column 3: alerts (FR-5.2 / 5.3 / 5.4).
+        alerts = ttk.Frame(body)
+        alerts.grid(row=0, column=2, sticky="nsew")
+        alerts.columnconfigure(0, weight=1)
+        alerts.rowconfigure(1, weight=1)
+        self._alert_summary_var = tk.StringVar(value="尚无质量数据。")
+        ttk.Label(
+            alerts,
+            textvariable=self._alert_summary_var,
+            style="Status.TLabel",
+            wraplength=500,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w")
+        self._alerts_text = tk.Text(
+            alerts,
+            height=4,
+            wrap="word",
+            relief="flat",
+            bg="#f9fafb",
+            fg="#111827",
+            font=(FONT_FAMILY, 9),
+            padx=8,
+            pady=5,
+            state="disabled",
+        )
+        self._alerts_text.grid(row=1, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(alerts, orient="vertical", command=self._alerts_text.yview)
+        self._alerts_text.configure(yscrollcommand=scroll.set)
+        scroll.grid(row=1, column=1, sticky="ns")
+        self._alerts_text.tag_configure("head_error", foreground="#b91c1c", font=(FONT_FAMILY, 9, "bold"))
+        self._alerts_text.tag_configure("head_warn", foreground="#b45309", font=(FONT_FAMILY, 9, "bold"))
+        self._alerts_text.tag_configure("head_info", foreground="#0f766e", font=(FONT_FAMILY, 9, "bold"))
+        self._alerts_text.tag_configure("body", foreground="#374151")
+        self._alerts_text.tag_configure("empty", foreground="#6b7280")
+
+        ttk.Label(
+            alerts,
+            textvariable=self._coverage_var,
+            style="Hint.TLabel",
+            wraplength=500,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", pady=(3, 0))
 
         self._update_result_buttons()
 
+    def _build_history(self, parent: ttk.LabelFrame) -> None:
+        bar = ttk.Frame(parent)
+        bar.grid(row=1, column=0, sticky="ew", pady=(4, 2))
+        bar.columnconfigure(1, weight=1)
+        ttk.Button(bar, text="刷新历史", command=self.refresh_history).grid(row=0, column=0, sticky="w")
+        ttk.Label(bar, textvariable=self._history_var, style="Hint.TLabel").grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+        table = ttk.Frame(parent)
+        table.grid(row=2, column=0, sticky="nsew")
+        parent.rowconfigure(2, weight=1)
+        table.columnconfigure(0, weight=1)
+
+        self._history_tree = ttk.Treeview(
+            table,
+            columns=("time", "target", "status", "rows"),
+            show="headings",
+            height=2,
+            selectmode="browse",
+        )
+        for column, text, width, anchor in (
+            ("time", "运行时间", 150, "w"),
+            ("target", "目标日期", 110, "center"),
+            ("status", "状态", 100, "center"),
+            ("rows", "清洗后行数", 100, "e"),
+        ):
+            self._history_tree.heading(column, text=text)
+            self._history_tree.column(column, width=width, anchor=anchor, stretch=(column == "time"))
+        self._history_tree.grid(row=0, column=0, sticky="nsew")
+        self._history_tree.bind("<Double-1>", self._open_history_report)
+
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self._history_tree.yview)
+        self._history_tree.configure(yscrollcommand=scroll.set)
+        scroll.grid(row=0, column=1, sticky="ns")
+
     def _build_footer(self) -> None:
-        footer = ttk.Frame(self, padding=(12, 0, 12, 10))
+        footer = ttk.Frame(self, padding=(12, 0, 12, 8))
         footer.grid(row=5, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
 
@@ -337,6 +458,63 @@ class InsightFlowApp(tk.Tk):
         ready = bool(self.files_summary and self.files_summary.get("supported_count")) and not self.worker.running
         self._start_btn.state(["!disabled"] if ready else ["disabled"])
 
+    def refresh_history(self) -> None:
+        """FR-6.1: recent runs from logs/runs.jsonl."""
+        try:
+            self._history_rows = services.run_history(self.settings, limit=10)
+        except Exception:  # noqa: BLE001 - history must never break the window
+            self._history_rows = []
+        self._history_tree.delete(*self._history_tree.get_children())
+        for item in self._history_rows:
+            self._history_tree.insert(
+                "",
+                "end",
+                values=(item["time"], item["target_date"], item["status_label"], item["rows"]),
+            )
+        if self._history_rows:
+            self._history_var.set(f"最近 {len(self._history_rows)} 次（双击打开报告）")
+        else:
+            self._history_var.set("暂无运行记录")
+
+    def _open_history_report(self, _event: object = None) -> None:
+        selection = self._history_tree.selection()
+        if not selection:
+            return
+        index = self._history_tree.index(selection[0])
+        if index >= len(self._history_rows):
+            return
+        item = self._history_rows[index]
+        if not item["report_path"]:
+            reason = item["failure_reason"] or "该次运行没有生成报告。"
+            messagebox.showinfo("没有可打开的报告", f"{item['time']} · {item['status_label']}\n{reason}")
+            return
+        self._open_path(item["report_path"], "报告")
+
+    # -- date order (FR-4.1 / FR-4.2) -------------------------------------
+
+    def _on_date_order_change(self) -> None:
+        value = self._date_order_var.get()
+        if value == self.settings.date_order:
+            return
+        label = services.DATE_ORDER_LABELS.get(value, value)
+        # FR-8.4: writing the configuration is a "覆盖配置" action → confirm.
+        persist = messagebox.askyesno(
+            "写入配置",
+            f"日期口径已切换为「{label}」并立即生效。\n\n"
+            "是否同时写入 config/config.json，作为以后运行与定时任务的默认口径？\n"
+            "（选「否」则只对本次打开的操作端生效）",
+        )
+        self.settings = dataclasses.replace(self.settings, date_order=value)
+        if not persist:
+            self._status_var.set(f"日期口径：{label}（仅本次会话）")
+            return
+        try:
+            path = services.save_date_order(self.settings, value)
+            self._status_var.set(f"日期口径已写入 {self._display_path(path)}")
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("写入配置失败", services.friendly_error(exc))
+            self._status_var.set("日期口径已生效，但写入配置失败")
+
     # -- run ---------------------------------------------------------------
 
     def _shift_date(self, days: int) -> None:
@@ -375,9 +553,11 @@ class InsightFlowApp(tk.Tk):
         self._progress["value"] = 0
         self._update_elapsed()
 
+        settings = self.settings
+
         def task(progress: Progress) -> dict:
             return services.run_analysis(
-                self.settings,
+                settings,
                 target,
                 force=False,
                 on_stage=lambda index, label: progress.stage(
@@ -389,7 +569,9 @@ class InsightFlowApp(tk.Tk):
             self._set_busy(False)
 
     def _set_busy(self, busy: bool) -> None:
-        for widget in (self._date_entry, self._prev_btn, self._next_btn, self._refresh_btn, self._folder_btn):
+        widgets = [self._date_entry, self._prev_btn, self._next_btn, self._refresh_btn, self._folder_btn]
+        widgets.extend(self._order_buttons)
+        for widget in widgets:
             widget.state(["disabled"] if busy else ["!disabled"])
         if busy:
             self._start_btn.state(["disabled"])
@@ -415,7 +597,6 @@ class InsightFlowApp(tk.Tk):
                 if isinstance(total, (int, float)) and total:
                     self._progress.configure(maximum=total)
                 if isinstance(current, (int, float)):
-                    # A finished stage fills its slot; the bar never looks stuck.
                     self._progress["value"] = current
                 self._stage_var.set(str(payload.get("text", "")))
             elif message.kind == MSG_DONE:
@@ -425,9 +606,9 @@ class InsightFlowApp(tk.Tk):
                 self._stage_var.set(self._stage_text(self.summary))
                 self._elapsed_var.set("")
                 self._update_result_buttons()
-                # Refresh the listing first: it resets the status line when it
-                # succeeds, and the run verdict must win.
+                self._render_quality((self.summary or {}).get("quality"))
                 self.refresh_files()
+                self.refresh_history()
                 self._status_var.set(f"空闲 · 最近一次运行：{(self.summary or {}).get('status_label', '—')}")
             elif message.kind == MSG_FAILED:
                 self._set_busy(False)
@@ -449,6 +630,48 @@ class InsightFlowApp(tk.Tk):
             )
         reason = summary.get("failure_reason") or services.RESULT_UNAVAILABLE.get(str(status), "")
         return f"结果：{summary.get('status_label')}" + (f" · {reason}" if reason else "")
+
+    # -- quality (FR-5.1 - FR-5.4) ----------------------------------------
+
+    def _render_quality(self, quality: dict | None) -> None:
+        if not quality or not quality.get("available"):
+            self._score_label.configure(text="—", bg="#e5e7eb")
+            self._score_grade_var.set("暂无质量数据")
+            self._score_detail_var.set("")
+            self._coverage_var.set("")
+            self._alert_summary_var.set(services.alerts_summary(None))
+            reason = (quality or {}).get("reason") or "尚未运行。"
+            self._set_alerts_text([(reason, "empty")])
+            return
+
+        self._score_label.configure(text=f"{quality['score']:.1f}", bg=quality["colour"])
+        self._score_grade_var.set(f"质量分 · {quality['grade']}")
+        components = quality.get("components") or {}
+        self._score_detail_var.set(
+            f"完整性 {components.get('completeness', '—')} · 重复 {components.get('duplicate_control', '—')}\n"
+            f"异常 {components.get('outlier_control', '—')} · 解析 {components.get('parse_quality', '—')}"
+        )
+
+        chunks: list[tuple[str, str]] = []
+        if not quality["alerts"]:
+            chunks.append(("本次未发现质量问题：无填补、无离群、无重复、无坏文件。", "empty"))
+        for alert in quality["alerts"]:
+            tag = {"error": "head_error", "warning": "head_warn"}.get(alert["severity"], "head_info")
+            chunks.append((f"【{alert['type']}】{alert['scope']} · {alert['count_text']}\n", tag))
+            chunks.append((f"    {alert['meaning']} {alert['advice']}\n", "body"))
+        self._set_alerts_text(chunks)
+        self._alert_summary_var.set(services.alerts_summary(quality))
+
+        # FR-5.4 is covered by the first alert entry (file, reason, impact).
+        self._coverage_var.set(services.quality_summary_text(quality))
+
+    def _set_alerts_text(self, chunks: list[tuple[str, str]]) -> None:
+        self._alerts_text.configure(state="normal")
+        self._alerts_text.delete("1.0", "end")
+        for text, tag in chunks:
+            self._alerts_text.insert("end", text, tag)
+        self._alerts_text.configure(state="disabled")
+        self._alerts_text.yview_moveto(0)
 
     # -- results -----------------------------------------------------------
 
@@ -473,13 +696,16 @@ class InsightFlowApp(tk.Tk):
 
     def _open_from_summary(self, key: str, label: str) -> None:
         path = (self.summary or {}).get(key) or ""
+        self._open_path(path, label)
+
+    def _open_path(self, path: str, label: str) -> None:
         if not path or not Path(path).exists():
             messagebox.showerror(f"找不到{label}", f"路径不存在：{path or '（空）'}")
             return
         try:
             os.startfile(path)  # type: ignore[attr-defined]
         except OSError as exc:
-            messagebox.showerror(f"无法打开{label}", f"{path}\n{exc}")
+            messagebox.showerror(f"无法打开{label}", f"{path}\n{services.friendly_error(exc)}")
 
     # -- misc --------------------------------------------------------------
 
@@ -490,7 +716,7 @@ class InsightFlowApp(tk.Tk):
                 target.mkdir(parents=True, exist_ok=True)
             os.startfile(target)  # type: ignore[attr-defined]
         except OSError as exc:
-            messagebox.showerror("无法打开数据源目录", f"{target}\n{exc}")
+            messagebox.showerror("无法打开数据源目录", f"{target}\n{services.friendly_error(exc)}")
 
     def confirm_environment(self) -> bool:
         """Startup gate: an untrusted environment must be acknowledged.
@@ -512,8 +738,9 @@ class InsightFlowApp(tk.Tk):
             "使用顺序：\n"
             "1. 点「放入待分析数据」，把 Excel / CSV 放进数据源目录；\n"
             "2. 回到窗口点「刷新清单」，确认文件出现在列表里；\n"
-            "3. 确认目标日期（默认昨天），点「开始分析」；\n"
-            "4. 完成后在「结果」区打开清洗数据或报告。\n\n"
+            "3. 确认目标日期与日期口径，点「开始分析」；\n"
+            "4. 看质量分与告警：有填补/离群/歧义时请谨慎引用数字；\n"
+            "5. 在「结果」区打开清洗数据或报告。\n\n"
             "数据不会离开本机；分析结果与命令行完全一致。",
         )
 
@@ -521,7 +748,7 @@ class InsightFlowApp(tk.Tk):
         try:
             os.startfile(self.settings.log_dir)  # type: ignore[attr-defined]
         except (AttributeError, OSError) as exc:
-            messagebox.showerror("无法打开日志目录", f"{self.settings.log_dir}\n{exc}")
+            messagebox.showerror("无法打开日志目录", f"{self.settings.log_dir}\n{services.friendly_error(exc)}")
 
     def _on_close(self) -> None:
         if self.worker.running and not messagebox.askyesno("退出", "后台任务仍在执行，确定退出吗？"):
@@ -543,6 +770,15 @@ class InsightFlowApp(tk.Tk):
         # Drop Tcl variables while the interpreter is alive and we are on the UI
         # thread: a later garbage collection inside a worker thread would
         # finalise them there, which aborts the process (Tcl_AsyncDelete).
-        self._status_var = None  # type: ignore[assignment]
-        self._stage_var = None  # type: ignore[assignment]
+        for name in (
+            "_status_var",
+            "_stage_var",
+            "_result_var",
+            "_coverage_var",
+            "_alert_summary_var",
+            "_history_var",
+            "_score_grade_var",
+            "_score_detail_var",
+        ):
+            setattr(self, name, None)
         self.destroy()
