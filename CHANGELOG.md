@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.16-dev — LLM 阶段 6c：灰度观测
+
+- `scripts/llm_stats.py` 扩展为采信灰度看板：每能力模式/采信率/回退率/回退原因、
+  对账通过率、语义一致率、计划 Jaccard、样本类别与放量判据（10 次/3 类/回退≤5%/对账 100%）。
+- 新增 `scripts/llm_gray_run.py`：4 类样本 × 3 次、四能力 gated 的真实灰度，证据落盘
+  `docs/llm-stage6-gray.json`。
+- 灰度结果：execute 12/12、对账 100%；semantic 7/12、plan 9/12、narrative 10/12；
+  整体回退率 20.8% > 5% → **维持 gated，不进入 primary**，并列出单位/字段范围/事实值/JSON 四类整改项。
+- 修复 plan 采信对原始列名的映射（`name_map`），真实灰度中 plan 采信从 0/12 恢复为 9/12。
+- 测试 329 项（+6）。
+
 ## 1.0.15-dev — LLM 阶段 6b-4：semantic 采信
 
 - 新增核心纯函数门禁 `semantic_adoption.adopt_semantic_fields`：业务列全覆盖、关键角色

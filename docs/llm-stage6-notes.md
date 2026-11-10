@@ -155,6 +155,50 @@ shadow 不采信、`force_rules` 不采信。
 适配器：角色一致采信、缺列、关键角色冲突、单位冲突、未知 canonical 声明为 metric、dimension→metric 允许；
 管线：gated 采信并显示来源、角色冲突回退且留 gate_reason、shadow 不采信。
 
+## 6c 灰度观测（2026-11-10）
+
+### 统计口径（`scripts/llm_stats.py`）
+
+- 每能力：模式分布（shadow/gated/primary/absent）、`attempted/adopted/fallbacks`、
+  `adoption_rate`、`fallback_rate`、`gate_reason` 分布；
+- 一致性：`semantic_role_agreement_avg`、`plan_metrics_jaccard_avg`；
+- 执行：`reconcile_attempted/passed/pass_rate`；
+- 成本与稳定性：cost、json_failure_rate、retries、prompt_warn；
+- 样本：`samples`（默认按不同数据指纹，灰度脚本按真实数据类别传入）；
+- 放量判据：`runs ≥ 10`、`samples ≥ 3`、整体回退率 `≤5%`、对账通过率 `100%`；
+  任一不满足即 `ready=false` 并给出 blockers。
+
+### 灰度实跑（4 类样本 × 3 次 = 12 次，四能力全 gated）
+
+| 能力 | 采信/尝试 | 回退原因 |
+|---|---|---|
+| semantic | **7/12** | `unit_conflict` ×3（03 表 注册资本 单位“万/万元”不一致）、`source_fallback` ×2（真实 2018 JSON 不闭合） |
+| plan | **9/12** | `plan_invalid: 指标引用不存在字段: 登记机关` ×3（03 表该列未进入分析字段） |
+| execute | **12/12** | 无；对账通过率 **100%** |
+| narrative | **10/12** | `unknown placeholder: total.rows` ×1；`UnsafeMarkupError: replacement value ...` ×1（事实值含字母） |
+
+- 12 次运行全部 `status=success`，JSON 失败率 0，成本 **0.184 元**；
+- 规则结果继续作为对照落盘（`semantic_diff` / `plan_diff` / `execution_diff`）；
+- 原始证据：[docs/llm-stage6-gray.json](llm-stage6-gray.json)。
+
+### 放量判定（6c → 6d）
+
+```text
+runs=12 (≥10) · samples=4 (≥3) · reconcile_pass_rate=100%
+overall_fallback_rate=20.83% > 5%  → ready=false
+blockers: ["fallback_rate 0.2083 > 0.05"]
+```
+
+**结论：维持 gated，不进入 primary。** 达标前需先降低非预期回退：
+
+1. **单位口径**：统一“万/万元”等写法（提示词/规则单位归一），否则 03 类工商表持续 `unit_conflict`；
+2. **计划字段范围**：提示词限制只能引用实际分析字段，或让适配器把被规则丢弃的维度显式排除并提示；
+3. **叙事事实值**：`SAFE_VALUE_RE` 不含字母，事实值含“LLM/英文”时会回退；需在 facts 构造侧规范化或提示词规避 `total.rows` 等不存在键；
+4. **真实数据 JSON 稳定性**：仍偶发不闭合，需继续观察/服务端 json_schema。
+
+> 灰度观测只统计与落盘，不改变默认 shadow 行为；`force_rules` 仍可一键回全规则。
+
+
 
 
 

@@ -315,32 +315,37 @@ def adapt_plan(
     time_column: str | None = None,
     max_charts: int = 8,
     dataset_kind: str = "LLM 分析计划",
+    name_map: dict[str, str] | None = None,
 ) -> AnalysisPlan:
     """Pure ``PlanDraft -> AnalysisPlan`` conversion (no network/no llm import).
 
+    ``name_map`` translates raw column names (what the LLM saw) to canonical
+    field keys; unmapped names are kept as-is so canonical drafts still work.
     Raises ``PlanValidationError`` when the draft references unknown fields,
     uses wrong roles, has no metric, or asks for an unsupported chart kind.
-    The resulting plan is consumed by the unchanged ``analyze()``.
     """
+    mapping = name_map or {}
     metrics: list[str] = []
-    for name in draft.metrics:
+    for raw in draft.metrics:
+        name = mapping.get(raw, raw)
         spec = fields.get(name)
         if spec is None:
-            raise PlanValidationError(f"指标引用不存在字段: {name}")
+            raise PlanValidationError(f"指标引用不存在字段: {raw}")
         if getattr(spec, "kind", "") != "metric":
-            raise PlanValidationError(f"指标「{name}」不是 metric 字段")
+            raise PlanValidationError(f"指标「{raw}」不是 metric 字段")
         if name not in metrics:
             metrics.append(name)
     if not metrics:
         raise PlanValidationError("计划缺少可用指标")
 
     dimensions: list[str] = []
-    for name in draft.dimensions:
+    for raw in draft.dimensions:
+        name = mapping.get(raw, raw)
         spec = fields.get(name)
         if spec is None:
-            raise PlanValidationError(f"维度引用不存在字段: {name}")
+            raise PlanValidationError(f"维度引用不存在字段: {raw}")
         if getattr(spec, "kind", "") != "dimension":
-            raise PlanValidationError(f"维度「{name}」不是 dimension 字段")
+            raise PlanValidationError(f"维度「{raw}」不是 dimension 字段")
         if name not in dimensions:
             dimensions.append(name)
 

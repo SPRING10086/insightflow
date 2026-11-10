@@ -480,6 +480,10 @@ def execute(
                         column_count=len(cleaned.columns),
                         time_column=time_column,
                         max_charts=settings.max_charts,
+                        name_map={
+                            str(getattr(spec, "original", key)): key
+                            for key, spec in analysis_fields.items()
+                        },
                     )
                     plan_adopted = True
                     if plan.primary_metric in analysis_fields:

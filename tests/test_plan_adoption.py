@@ -80,6 +80,16 @@ class PlanAdapterTests(unittest.TestCase):
         with self.assertRaises(PlanValidationError):
             adapt_plan(_draft(charts=[chart]), _fields(), target_date="2026-11-07")
 
+    def test_name_map_resolves_original_column_names(self):
+        plan = adapt_plan(
+            _draft(metrics=["订单量"], dimensions=["区域"]),
+            _fields(),
+            target_date="2026-11-07",
+            name_map={"订单量": "orders", "区域": "region"},
+        )
+        self.assertEqual(plan.primary_metric, "orders")
+        self.assertEqual(plan.primary_dimension, "region")
+
 
 class FakePlanProvider:
     name = "fake"

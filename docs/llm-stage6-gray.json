@@ -1,0 +1,222 @@
+{
+  "generated_at": "2026-11-10T23:50:08",
+  "runs": [
+    {
+      "sample": "01_clean",
+      "run": 1,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.014028
+    },
+    {
+      "sample": "01_clean",
+      "run": 2,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "fallback",
+      "cost_cny": 0.013618
+    },
+    {
+      "sample": "01_clean",
+      "run": 3,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.013958
+    },
+    {
+      "sample": "02_boundary",
+      "run": 1,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.013506
+    },
+    {
+      "sample": "02_boundary",
+      "run": 2,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.013778
+    },
+    {
+      "sample": "02_boundary",
+      "run": 3,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.01427
+    },
+    {
+      "sample": "03_registry",
+      "run": 1,
+      "status": "success",
+      "semantic": false,
+      "plan": false,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.018716
+    },
+    {
+      "sample": "03_registry",
+      "run": 2,
+      "status": "success",
+      "semantic": false,
+      "plan": false,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.01866
+    },
+    {
+      "sample": "03_registry",
+      "run": 3,
+      "status": "success",
+      "semantic": false,
+      "plan": false,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.018602
+    },
+    {
+      "sample": "real_2018_sh",
+      "run": 1,
+      "status": "success",
+      "semantic": false,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "fallback",
+      "cost_cny": 0.0144
+    },
+    {
+      "sample": "real_2018_sh",
+      "run": 2,
+      "status": "success",
+      "semantic": true,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.0161
+    },
+    {
+      "sample": "real_2018_sh",
+      "run": 3,
+      "status": "success",
+      "semantic": false,
+      "plan": true,
+      "execute": true,
+      "reconcile": true,
+      "narrative": "llm",
+      "cost_cny": 0.014256
+    }
+  ],
+  "aggregate": {
+    "calls": 36,
+    "json_failures": 0,
+    "retries": 0,
+    "fallbacks": 4,
+    "retry_blocked": 0,
+    "cost_cny": 0.183892,
+    "max_prompt_tokens": 1744,
+    "prompt_warn_runs": 0,
+    "runs_with_llm": 12,
+    "runs": 12,
+    "samples": 4,
+    "json_failure_rate": 0.0,
+    "fallback_rate": 0.1111,
+    "avg_retries_per_call": 0.0,
+    "features": {
+      "semantic": {
+        "attempted": 12,
+        "adopted": 7,
+        "fallbacks": 5,
+        "modes": {
+          "gated": 12
+        },
+        "reasons": {
+          "semantic_invalid:unit_conflict": 3,
+          "source_fallback": 2
+        },
+        "adoption_rate": 0.5833,
+        "fallback_rate": 0.4167
+      },
+      "plan": {
+        "attempted": 12,
+        "adopted": 9,
+        "fallbacks": 3,
+        "modes": {
+          "gated": 12
+        },
+        "reasons": {
+          "plan_invalid:维度引用不存在字段: 登记机关": 3
+        },
+        "adoption_rate": 0.75,
+        "fallback_rate": 0.25
+      },
+      "execute": {
+        "attempted": 12,
+        "adopted": 12,
+        "fallbacks": 0,
+        "modes": {
+          "gated": 12
+        },
+        "reasons": {},
+        "adoption_rate": 1.0,
+        "fallback_rate": 0.0
+      },
+      "narrative": {
+        "attempted": 12,
+        "adopted": 10,
+        "fallbacks": 2,
+        "modes": {
+          "gated": 12
+        },
+        "reasons": {
+          "UnknownReferenceError: unknown placeholder: total.rows": 1,
+          "UnsafeMarkupError: replacement value is not safe: 'LLM 分析计划'": 1
+        },
+        "adoption_rate": 0.8333,
+        "fallback_rate": 0.1667
+      }
+    },
+    "overall_fallback_rate": 0.2083,
+    "reconcile_attempted": 12,
+    "reconcile_passed": 12,
+    "reconcile_pass_rate": 1.0,
+    "semantic_role_agreement_avg": 0.8928,
+    "plan_metrics_jaccard_avg": 1.0,
+    "readiness": {
+      "required_runs": 10,
+      "required_samples": 3,
+      "max_fallback_rate": 0.05,
+      "ready": false,
+      "blockers": [
+        "fallback_rate 0.2083 > 0.05"
+      ]
+    }
+  }
+}
