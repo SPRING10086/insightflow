@@ -163,6 +163,7 @@ def execute(
     plan_provider: Any | None = None,
     execution_provider: Any | None = None,
     narrative_provider: Any | None = None,
+    adoption_decision: Any | None = None,
 ) -> RunRecord:
     """Run the full pipeline once and always return a structured record.
 
@@ -500,6 +501,12 @@ def execute(
                 execution_bundle,
                 narrative_bundle,
             ).to_dict()
+        # Stage 6a: record the resolved adoption decision only when it is not the
+        # default (all shadow), so the default output stays byte-identical.
+        if adoption_decision is not None and (
+            getattr(adoption_decision, "force_rules", False) or adoption_decision.any_non_shadow()
+        ):
+            record.metadata["adoption"] = adoption_decision.to_dict()
         report_path = day_dir / f"InsightFlow_{target.isoformat()}_{run_id}.html"
         record.finished_at = now_local(settings.timezone).isoformat(timespec="seconds")
         record.duration_ms = max(0, int((now_local(settings.timezone) - started_at).total_seconds() * 1000))

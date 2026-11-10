@@ -91,8 +91,13 @@ class LLMSettings:
     retry_structured: int = 2
     retry_transport: int = 2
     warn_prompt_tokens: int = 8000
+    force_rules: bool = False
+    adoption: dict[str, str] = field(
+        default_factory=lambda: {"semantic": "shadow", "plan": "shadow", "execute": "shadow", "narrative": "shadow"}
+    )
 
     FEATURES = ("semantic", "plan", "execute", "narrative")
+    ADOPTION_MODES = ("shadow", "gated", "primary")
 
     def feature_enabled(self, name: str) -> bool:
         """Master switch gates every feature; unknown names are a config error."""
@@ -106,7 +111,17 @@ class LLMSettings:
             raw = {}
         if not isinstance(raw, dict):
             raise ConfigError("llm 配置必须是对象")
-        allowed = {"enabled", "features", "budget", "timeout", "sandbox", "retry", "warn_prompt_tokens"}
+        allowed = {
+            "enabled",
+            "features",
+            "budget",
+            "timeout",
+            "sandbox",
+            "retry",
+            "warn_prompt_tokens",
+            "force_rules",
+            "adoption",
+        }
         unknown = set(raw) - allowed
         if unknown:
             raise ConfigError(f"llm 配置包含未知键: {sorted(unknown)}")
@@ -178,6 +193,20 @@ class LLMSettings:
         retry_transport = require_int(retry.get("transport", 2), "llm.retry.transport", 0, 3)
 
         warn_prompt_tokens = require_int(raw.get("warn_prompt_tokens", 8000), "llm.warn_prompt_tokens", 0, 1_000_000)
+        force_rules = require_bool(raw.get("force_rules", False), "llm.force_rules")
+
+        adoption_raw = raw.get("adoption", {})
+        if not isinstance(adoption_raw, dict):
+            raise ConfigError("llm.adoption 必须是对象")
+        unknown_adoption = set(adoption_raw) - set(cls.FEATURES)
+        if unknown_adoption:
+            raise ConfigError(f"llm.adoption 包含未知能力: {sorted(unknown_adoption)}")
+        adoption: dict[str, str] = {}
+        for name in cls.FEATURES:
+            value = adoption_raw.get(name, "shadow")
+            if value not in cls.ADOPTION_MODES:
+                raise ConfigError(f"llm.adoption.{name} 必须是 shadow/gated/primary")
+            adoption[name] = value
 
         return cls(
             enabled=enabled,
@@ -194,6 +223,8 @@ class LLMSettings:
             retry_structured=retry_structured,
             retry_transport=retry_transport,
             warn_prompt_tokens=warn_prompt_tokens,
+            force_rules=force_rules,
+            adoption=adoption,
         )
 
 
@@ -278,6 +309,8 @@ class Settings:
                 },
                 "sandbox": {"memory_mb": self.llm.memory_mb, "max_input_rows": self.llm.max_input_rows},
                 "retry": {"structured_output": self.llm.retry_structured, "transport": self.llm.retry_transport},
+                "force_rules": self.llm.force_rules,
+                "adoption": dict(self.llm.adoption),
                 "warn_prompt_tokens": self.llm.warn_prompt_tokens,
             },
         }

@@ -18,6 +18,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from ..adoption import resolve_adoption
 from ..config import LLMSettings, Settings, load_settings
 from ..logging_setup import read_run_history
 from ..pipeline import execute
@@ -240,6 +241,7 @@ def run_analysis(
             force=force,
             on_step=observe,
             **providers,
+            adoption_decision=resolve_adoption(settings.llm),
         )
     except Exception as exc:  # noqa: BLE001 - translate, never leak a traceback
         raise ServiceError(friendly_error(exc)) from exc
@@ -746,6 +748,8 @@ def _llm_to_dict(llm: LLMSettings) -> dict[str, Any]:
         "sandbox": {"memory_mb": llm.memory_mb, "max_input_rows": llm.max_input_rows},
         "retry": {"structured_output": llm.retry_structured, "transport": llm.retry_transport},
         "warn_prompt_tokens": llm.warn_prompt_tokens,
+        "force_rules": llm.force_rules,
+        "adoption": dict(llm.adoption),
     }
 
 

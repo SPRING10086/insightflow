@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.10-dev — LLM 阶段 6a：采信模式框架
+
+- `LLMSettings` 增加 `force_rules` 与四能力 `adoption`（shadow/gated/primary，默认全 shadow），
+  未知值/未知能力 fail-closed。
+- 新增核心纯模块 `adoption.py`：模式解析、总开关/功能开关门控、plan→semantic 与 execute→plan 依赖降级、
+  `INSIGHTFLOW_FORCE_RULES` kill switch。
+- `pipeline.execute(..., adoption_decision=None)` 仅在非 shadow/force_rules 时写 `metadata.adoption`；
+  默认全 shadow 时 `metrics.json`/`cleaned_data.csv`/`analysis_plan.json` 逐字节不变。
+- CLI/GUI 运行前解析决议；无采信、不构建 provider。测试 13 项新增。
+
 ## 1.0.9-dev — LLM 阶段 5a：工程可靠性
 
 ### 5a-1 统一配置

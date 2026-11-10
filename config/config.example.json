@@ -39,6 +39,13 @@
       "execute": false,
       "narrative": false
     },
+    "force_rules": false,
+    "adoption": {
+      "semantic": "shadow",
+      "plan": "shadow",
+      "execute": "shadow",
+      "narrative": "shadow"
+    },
     "budget": {
       "per_table_cny": 5.0,
       "batch_cny": 20.0

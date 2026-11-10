@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __app_name__, __version__, services
+from .adoption import resolve_adoption
 from .config import ConfigError, Settings, load_settings
 from .discovery import SourceNotFoundError
 from .logging_setup import read_run_history
@@ -229,6 +230,7 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
         plan_provider=plan_provider,
         execution_provider=execution_provider,
         narrative_provider=narrative_provider,
+        adoption_decision=resolve_adoption(settings.llm),
     )
     if args.json:
         print(json.dumps(jsonable(record), ensure_ascii=False, indent=2))
