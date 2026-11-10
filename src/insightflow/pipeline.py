@@ -519,7 +519,15 @@ def execute(
             fields=analysis_fields,
             settings=settings,
             output_path=report_path,
-            narrative=narrative_bundle["rendered"] if narrative_bundle else None,
+            narrative=(
+                narrative_bundle["rendered"]
+                if narrative_bundle
+                and (
+                    adoption_decision is None
+                    or adoption_decision.mode("narrative") != "shadow"
+                )
+                else None
+            ),
         )
         latest_path = settings.output_dir / "latest.html"
         try:

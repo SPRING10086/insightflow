@@ -131,6 +131,33 @@ class ResolveTests(unittest.TestCase):
         self.assertTrue(decision.force_rules)
         self.assertEqual(decision.modes["narrative"], "shadow")
 
+    def test_env_overrides_config_force(self):
+        llm = self._llm(force_rules=True)
+        with patch.dict(os.environ, {"INSIGHTFLOW_FORCE_RULES": "0"}):
+            decision = resolve_adoption(llm)
+        self.assertFalse(decision.force_rules)
+
+    def test_env_force_wins_over_config_false(self):
+        llm = self._llm(adoption={"semantic": "primary"}, features={"semantic": True})
+        with patch.dict(os.environ, {"INSIGHTFLOW_FORCE_RULES": "true"}):
+            decision = resolve_adoption(llm, {"INSIGHTFLOW_FORCE_RULES": "true"})
+        self.assertTrue(decision.force_rules)
+        self.assertTrue(all(mode == "shadow" for mode in decision.modes.values()))
+
+    def test_narrative_requires_execute(self):
+        llm = self._llm(adoption={"narrative": "gated"})
+        decision = resolve_adoption(llm)
+        self.assertEqual(decision.modes["narrative"], "shadow")
+        self.assertEqual(decision.reasons["narrative"], "upstream_execute_shadow")
+
+    def test_decision_schema(self):
+        decision = resolve_adoption(self._llm(adoption={"semantic": "gated"}))
+        payload = decision.to_dict()
+        self.assertIn("force_rules", payload)
+        self.assertIn("final_mode", payload)
+        self.assertIn("downgrade_reason", payload)
+        self.assertEqual(payload["final_mode"]["semantic"], "gated")
+
 
 class PipelineZeroChangeTests(unittest.TestCase):
     def test_shadow_decision_adds_no_metadata_and_same_metrics(self):
@@ -171,8 +198,13 @@ class PipelineZeroChangeTests(unittest.TestCase):
         tmp = _project(
             {
                 "enabled": True,
-                "features": {"narrative": True},
-                "adoption": {"narrative": "gated"},
+                "features": {"semantic": True, "plan": True, "execute": True, "narrative": True},
+                "adoption": {
+                    "semantic": "gated",
+                    "plan": "gated",
+                    "execute": "gated",
+                    "narrative": "gated",
+                },
             }
         )
         self.addCleanup(_cleanup, tmp)
@@ -186,7 +218,7 @@ class PipelineZeroChangeTests(unittest.TestCase):
         self.assertEqual(record.status, "success")
         day = settings.output_dir / "2026-11-07"
         meta = json.loads((day / "run_record.json").read_text(encoding="utf-8"))["metadata"]
-        self.assertEqual(meta["adoption"]["modes"]["narrative"], "gated")
+        self.assertEqual(meta["adoption"]["final_mode"]["narrative"], "gated")
         self.assertFalse((day / "narrative_llm.json").exists())
 
 

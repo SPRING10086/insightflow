@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.11-dev — LLM 阶段 6b-1：narrative 采信
+
+- `metadata.adoption` 改为统一结构：`force_rules / final_mode / downgrade_reason`。
+- 环境变量 `INSIGHTFLOW_FORCE_RULES` 优先于配置：显式 `0/false` 可关闭配置中的 force_rules。
+- narrative 依赖 execute：execute 仍 shadow 时 narrative 自动降级（`upstream_execute_shadow`）。
+- narrative 采信落地：shadow 仅落盘不渲染；gated/primary 校验通过才插入“智能解读”，失败回退且留痕。
+- 测试 297 项。
+
 ## 1.0.10-dev — LLM 阶段 6a：采信模式框架
 
 - `LLMSettings` 增加 `force_rules` 与四能力 `adoption`（shadow/gated/primary，默认全 shadow），

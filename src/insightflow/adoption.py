@@ -44,17 +44,30 @@ class AdoptionDecision:
         return any(mode != "shadow" for mode in self.modes.values())
 
     def to_dict(self) -> dict[str, Any]:
-        return {"modes": dict(self.modes), "reasons": dict(self.reasons), "force_rules": self.force_rules}
+        return {
+            "force_rules": self.force_rules,
+            "final_mode": dict(self.modes),
+            "downgrade_reason": dict(self.reasons),
+        }
 
 
-def _env_force(env: Mapping[str, str] | None) -> bool:
+def _env_force(env: Mapping[str, str] | None) -> bool | None:
+    """Return the env override when explicitly set, else ``None``.
+
+    Environment wins over config so operations can force rules without editing
+    the file; an explicit ``0``/``false`` disables a config-level force too.
+    """
     source = os.environ if env is None else env
-    return str(source.get("INSIGHTFLOW_FORCE_RULES", "")).strip().lower() in TRUTHY
+    raw = source.get("INSIGHTFLOW_FORCE_RULES")
+    if raw is None or str(raw).strip() == "":
+        return None
+    return str(raw).strip().lower() in TRUTHY
 
 
 def resolve_adoption(llm: Any, env: Mapping[str, str] | None = None) -> AdoptionDecision:
     """Resolve configured adoption modes into this run's effective decision."""
-    force_rules = bool(getattr(llm, "force_rules", False)) or _env_force(env)
+    env_force = _env_force(env)
+    force_rules = env_force if env_force is not None else bool(getattr(llm, "force_rules", False))
     configured = getattr(llm, "adoption", None) or {}
     modes: dict[str, str] = {}
     reasons: dict[str, str] = {}
@@ -78,5 +91,8 @@ def resolve_adoption(llm: Any, env: Mapping[str, str] | None = None) -> Adoption
     if modes["execute"] != "shadow" and modes["plan"] == "shadow":
         modes["execute"] = "shadow"
         reasons["execute"] = "upstream_plan_shadow"
+    if modes["narrative"] != "shadow" and modes["execute"] == "shadow":
+        modes["narrative"] = "shadow"
+        reasons["narrative"] = "upstream_execute_shadow"
 
     return AdoptionDecision(modes=modes, reasons=reasons, force_rules=force_rules)
