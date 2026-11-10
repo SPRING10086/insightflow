@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.12-dev — LLM 阶段 6b-2：execute 采信（过渡方案 b）
+
+- execute 采信门槛：模式非 shadow + 对账通过 + source llm + memory_guard job + 无错误 + 有主指标。
+- 过渡方案 b：**只采信已对账的主指标合计**，其余指标与分组/图表仍用规则；报告顶部新增“数据来源”说明，
+  `metadata.execution` 记录 `adopted/adopted_metrics/rule_metrics/gate_reason`。
+- 失败自动回退，`status=success`；`force_rules` 时不采信。6d 前须升级为全指标对账 (a)。
+- 测试 302 项。
+
 ## 1.0.11-dev — LLM 阶段 6b-1：narrative 采信
 
 - `metadata.adoption` 改为统一结构：`force_rules / final_mode / downgrade_reason`。

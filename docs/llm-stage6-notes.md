@@ -66,3 +66,32 @@
 - narrative 缺 execute 上游 → 降级且原因正确；
 - shadow 不渲染但保留产物、gated 渲染、gated 下 XSS 回退、force_rules 阻止采信、primary 无 provider 安全。
 
+## 6b-2 execute 采信（过渡方案 b，2026-11-10）
+
+### 采信门槛（全部满足才采信）
+
+1. `adoption.execute != shadow`；
+2. `reconcile(rule, llm).accepted == True`；
+3. `source_kind == "llm"`、`memory_guard == "job"`、无 `error`；
+4. 计划存在主指标且对账结果含 `total_llm`。
+
+失败时 `metadata.execution.adopted=false`，并记 `gate_reason`
+（`reconcile_mismatch` / `source_fallback` / `memory_guard` / `execution_error` / `no_primary_metric`），报告数字仍为规则结果。
+
+### 采信范围（方案 b 的明确边界）
+
+- **只采信已对账的主指标合计**：覆盖 KPI 中 `key == plan.primary_metric` 的 `value/formatted`；
+- **其余指标与所有分组/图表仍为规则计算**；报告顶部插入“数据来源”说明：
+  「主指标合计（销售额）由 LLM 沙箱计算并已与规则对账；其余指标（…）与所有分组图表由规则引擎计算。」
+- `metadata.execution` 增加 `adopted / adopted_metrics / rule_metrics / gate_reason`，供 6c 统计与审计；
+- 方案 (b) 是过渡态：**6d 放量前必须升级为 (a) 全指标对账**（已在阶段 6 评审裁定 2 中锁定）。
+
+### 测试（新增 5 项）
+
+- gated + 对账通过：KPI 采用沙箱 total（含 5e-7 差异证明真替换）、报告含“数据来源”、metadata 标记 adopted；
+- 对账不一致（+100）→ 不采信、gate_reason 正确、无来源说明；
+- 执行失败 → 不采信、运行仍成功；
+- `force_rules` → 不采信；
+- narrative 回退 vs 纯规则：KPI/洞察逐字段一致（仅多一条回退告警），两者均无“智能解读”。
+
+

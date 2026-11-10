@@ -68,6 +68,7 @@ def render_report(
     settings: Settings,
     output_path: Path,
     narrative: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Path:
     template_path = Path(__file__).resolve().parent / "templates" / "report.html"
     echarts_path = Path(__file__).resolve().parent / "assets" / "echarts.min.js"
@@ -161,6 +162,19 @@ def render_report(
 
         section = narrative_section(narrative)
         html = html.replace('<main class="wrap">', '<main class="wrap">' + section, 1)
+
+    if provenance:
+        # Mixed-source transparency: only the reconciled primary total comes from
+        # the LLM sandbox; every other number in this report is rule-computed.
+        adopted = "、".join(html_escape(str(item)) for item in provenance.get("adopted_metrics") or [])
+        rule = "、".join(html_escape(str(item)) for item in provenance.get("rule_metrics") or [])
+        note = (
+            '<div class="provenance-note" style="margin:0 0 12px;padding:8px 12px;'
+            'border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-size:12px">'
+            f"数据来源：主指标合计（{adopted or '—'}）由 LLM 沙箱计算并已与规则对账；"
+            f"其余指标（{rule or '—'}）与所有分组图表由规则引擎计算。</div>"
+        )
+        html = html.replace('<main class="wrap">', '<main class="wrap">' + note, 1)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")

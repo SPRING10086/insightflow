@@ -75,6 +75,8 @@ from .utils import (
     atomic_write_json,
     ensure_dir,
     file_fingerprint,
+    fmt_int,
+    fmt_money,
     humanize_duration,
     jsonable,
     now_local,
@@ -453,6 +455,42 @@ def execute(
                 f"成本 {result_llm.cost_cny:.4f} 元。",
             )
 
+        # 7.5.1) Stage 6b-2 execute adoption (transitional "b"): only the
+        # reconciled primary total is adopted; every other metric stays rule.
+        execute_provenance: dict[str, Any] | None = None
+        execute_gate_reason = ""
+        if (
+            execution_bundle is not None
+            and adoption_decision is not None
+            and adoption_decision.mode("execute") != "shadow"
+        ):
+            diff = execution_bundle["diff"]
+            llm_result = execution_bundle["llm"]
+            if not diff.get("accepted"):
+                execute_gate_reason = "reconcile_mismatch"
+            elif llm_result.source_kind != "llm":
+                execute_gate_reason = f"source_{llm_result.source_kind}"
+            elif llm_result.memory_guard != "job":
+                execute_gate_reason = "memory_guard"
+            elif llm_result.error:
+                execute_gate_reason = "execution_error"
+            elif getattr(plan, "primary_metric", None) and diff.get("total_llm") is not None:
+                primary = plan.primary_metric
+                field = analysis_fields.get(primary)
+                llm_total = float(diff["total_llm"])
+                for kpi in result.kpis:
+                    if kpi.key == primary:
+                        kpi.value = llm_total
+                        kpi.formatted = _format_kpi(llm_total, field)
+                        break
+                adopted_label = field.label if field is not None else primary
+                execute_provenance = {
+                    "adopted_metrics": [adopted_label],
+                    "rule_metrics": [kpi.label for kpi in result.kpis if kpi.key != primary],
+                }
+            else:
+                execute_gate_reason = "no_primary_metric"
+
         # 7.6) Optional LLM narrative (escaped text only; numbers locally rendered).
         narrative_bundle: dict[str, Any] | None = None
         if narrative_provider is not None:
@@ -488,6 +526,16 @@ def execute(
             _persist_plans(day_dir, plan_bundle, record)
         if execution_bundle is not None:
             _persist_execution(day_dir, execution_bundle, record)
+            if adoption_decision is not None and adoption_decision.mode("execute") != "shadow":
+                record.metadata["execution"]["adopted"] = execute_provenance is not None
+                record.metadata["execution"]["adopted_metrics"] = list(
+                    (execute_provenance or {}).get("adopted_metrics") or []
+                )
+                record.metadata["execution"]["rule_metrics"] = list(
+                    (execute_provenance or {}).get("rule_metrics") or []
+                )
+                if execute_gate_reason:
+                    record.metadata["execution"]["gate_reason"] = execute_gate_reason
         if narrative_bundle is not None:
             _persist_narrative(day_dir, narrative_bundle, record)
         if any(
@@ -528,6 +576,7 @@ def execute(
                 )
                 else None
             ),
+            provenance=execute_provenance,
         )
         latest_path = settings.output_dir / "latest.html"
         try:
@@ -940,6 +989,16 @@ def _persist_narrative(day_dir: Path, bundle: dict[str, Any], record: RunRecord)
         "placeholders": len(bundle["rendered"].get("mapping") or {}),
         "files": [path.name for path in written],
     }
+
+
+def _format_kpi(value: float, field: Any | None) -> str:
+    """Format an adopted KPI with the same conventions as the analysis layer."""
+    unit = str(getattr(field, "unit", "") or "")
+    if unit in {"%", "％"}:
+        return f"{value:.1f}%"
+    if unit == "元":
+        return fmt_money(value)
+    return fmt_int(value)
 
 
 def _collect_llm_stats(
