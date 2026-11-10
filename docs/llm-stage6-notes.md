@@ -99,4 +99,33 @@
 - `force_rules` → 不采信；
 - narrative 回退 vs 纯规则：KPI/洞察逐字段一致（仅多一条回退告警），两者均无“智能解读”。
 
+## 6b-3 plan 采信（2026-11-10）
+
+### 核心侧纯函数适配器
+
+`planning.adapt_plan(draft, fields, ...) -> AnalysisPlan`：
+
+- 纯函数：无网络、无副作用、不 import `llm`；
+- 校验并拒绝：未知字段、非 metric 当指标、非 dimension 当维度、无可用指标、不支持的图表类型；
+- 映射：`metrics/dimensions` → 计划列表；首个 metric/dimension 作为主指标/主维度；
+- 图表类型 → analyze 既有 step：`bar→rank`、`line→trend`、`donut/pie→share`、`pareto`、`histogram→distribution`、
+  `heatmap`、`scatter`、`dod`；始终保留 `kpi` step；
+- 产出 `AnalysisPlan` 交给**未修改**的 `analyze()` 计算所有数字；
+- 已知边界：图表标题/轴字段仍由 analyze 按主指标/主维度生成，适配器只选择“图表种类 + 主指标/维度”。
+
+### 管线采信
+
+- 门槛：`adoption.plan != shadow` + 计划来源 `llm` + 适配器成功；
+- 成功：`plan` 替换为适配计划，KPI/图表按 LLM 计划的主指标/维度生成；
+- 失败：保留规则计划，`metadata.plan.gate_reason = plan_invalid:<原因>`，`status=success`；
+- `metadata.plan` 记录 `adopted / adopted_primary / gate_reason`；
+- 报告顶部“数据来源”增加：“分析计划由 LLM 提供（主指标：xxx）”。
+
+### 测试（10 项，先红后绿）
+
+适配器：正常映射、未知指标、角色错配（metric↔dimension）、无指标、不支持图表；
+管线：gated 后 KPI 主指标变为 LLM 选择的订单量并带来源说明、非法计划回退规则且留 gate_reason、
+shadow 不采信、`force_rules` 不采信。
+
+
 

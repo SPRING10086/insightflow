@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from .models import AnalysisPlan, AnalysisStep, MetricDefinition
+
 PLAN_VERSION = "1.0"
 ALLOWED_CHART_TYPES = {"bar", "line", "pie", "donut", "pareto", "scatter", "heatmap", "histogram", "dod"}
 
@@ -286,3 +288,107 @@ def save_plan_artifacts(
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         written.append(target)
     return written
+
+
+#: Chart kind -> the analysis-mode step id that renders it.
+STEP_BY_CHART = {
+    "bar": "rank",
+    "line": "trend",
+    "donut": "share",
+    "pie": "share",
+    "pareto": "pareto",
+    "histogram": "distribution",
+    "heatmap": "heatmap",
+    "scatter": "scatter",
+    "dod": "dod",
+}
+
+
+def adapt_plan(
+    draft: PlanDraft,
+    fields: dict[str, Any],
+    *,
+    target_date: str,
+    baseline_date: str | None = None,
+    rows: int = 0,
+    column_count: int = 0,
+    time_column: str | None = None,
+    max_charts: int = 8,
+    dataset_kind: str = "LLM 分析计划",
+) -> AnalysisPlan:
+    """Pure ``PlanDraft -> AnalysisPlan`` conversion (no network/no llm import).
+
+    Raises ``PlanValidationError`` when the draft references unknown fields,
+    uses wrong roles, has no metric, or asks for an unsupported chart kind.
+    The resulting plan is consumed by the unchanged ``analyze()``.
+    """
+    metrics: list[str] = []
+    for name in draft.metrics:
+        spec = fields.get(name)
+        if spec is None:
+            raise PlanValidationError(f"指标引用不存在字段: {name}")
+        if getattr(spec, "kind", "") != "metric":
+            raise PlanValidationError(f"指标「{name}」不是 metric 字段")
+        if name not in metrics:
+            metrics.append(name)
+    if not metrics:
+        raise PlanValidationError("计划缺少可用指标")
+
+    dimensions: list[str] = []
+    for name in draft.dimensions:
+        spec = fields.get(name)
+        if spec is None:
+            raise PlanValidationError(f"维度引用不存在字段: {name}")
+        if getattr(spec, "kind", "") != "dimension":
+            raise PlanValidationError(f"维度「{name}」不是 dimension 字段")
+        if name not in dimensions:
+            dimensions.append(name)
+
+    steps = [AnalysisStep(step_id="kpi", title="核心指标", rationale="LLM 计划", priority=100)]
+    seen = {"kpi"}
+    for chart in draft.charts[: max(0, int(max_charts))]:
+        step_id = STEP_BY_CHART.get(chart.chart_type)
+        if step_id is None:
+            raise PlanValidationError(f"图表类型不支持: {chart.chart_type}")
+        if step_id in seen:
+            continue
+        seen.add(step_id)
+        steps.append(
+            AnalysisStep(
+                step_id=step_id,
+                title=chart.title or chart.chart_type,
+                rationale=getattr(chart, "note", "") or "LLM 计划",
+                chart_type=chart.chart_type,
+                priority=max(10, 95 - len(steps)),
+            )
+        )
+
+    metric_definitions = [
+        MetricDefinition(
+            key=name,
+            label=fields[name].label,
+            formula="LLM 计划引用",
+            unit=fields[name].unit,
+            aggregation=getattr(fields[name], "aggregation", "SUM"),
+            value_format=getattr(fields[name], "value_format", "number"),
+            source_columns=[getattr(fields[name], "original", name)],
+        )
+        for name in metrics
+    ]
+    return AnalysisPlan(
+        target_date=str(target_date),
+        baseline_date=str(baseline_date) if baseline_date else None,
+        dataset_kind=dataset_kind,
+        rows=int(rows),
+        column_count=int(column_count),
+        metrics=metrics,
+        dimensions=dimensions,
+        primary_metric=metrics[0],
+        primary_dimension=dimensions[0] if dimensions else None,
+        secondary_dimension=dimensions[1] if len(dimensions) > 1 else None,
+        time_column=time_column,
+        steps=steps,
+        metric_definitions=metric_definitions,
+        reasoning=["由 LLM 分析计划经确定性适配器转换"],
+        generated_at=datetime.now().isoformat(timespec="seconds"),
+    )

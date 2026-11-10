@@ -59,7 +59,15 @@ from .execution import (
 )
 from .schema import detect_schema
 from .stats import LLMStats
-from .planning import PLAN_VERSION, PlanArtifact, plan_diff, rule_plan_artifact, save_plan_artifacts
+from .planning import (
+    PLAN_VERSION,
+    PlanArtifact,
+    PlanValidationError,
+    adapt_plan,
+    plan_diff,
+    rule_plan_artifact,
+    save_plan_artifacts,
+)
 from .semantic import (
     ARTIFACT_VERSION,
     FieldSemantics,
@@ -414,6 +422,45 @@ def execute(
                 f"成本 {artifact.cost_cny:.4f} 元。",
             )
 
+        # 6.5.1) Stage 6b-3 plan adoption: a validated LLM plan is converted by a
+        # pure core adapter and drives analyze(); failure keeps the rule plan.
+        plan_adopted = False
+        plan_gate_reason = ""
+        plan_primary_label = ""
+        if (
+            plan_bundle is not None
+            and adoption_decision is not None
+            and adoption_decision.mode("plan") != "shadow"
+        ):
+            llm_plan = plan_bundle["llm"]
+            if llm_plan.source_kind != "llm":
+                plan_gate_reason = f"source_{llm_plan.source_kind}"
+            else:
+                time_column = next(
+                    (
+                        key
+                        for key, spec in analysis_fields.items()
+                        if getattr(spec, "kind", "") == "date"
+                    ),
+                    None,
+                )
+                try:
+                    plan = adapt_plan(
+                        llm_plan.plan,
+                        analysis_fields,
+                        target_date=target.isoformat(),
+                        baseline_date=baseline.isoformat() if baseline else None,
+                        rows=len(cleaned),
+                        column_count=len(cleaned.columns),
+                        time_column=time_column,
+                        max_charts=settings.max_charts,
+                    )
+                    plan_adopted = True
+                    if plan.primary_metric in analysis_fields:
+                        plan_primary_label = analysis_fields[plan.primary_metric].label
+                except PlanValidationError as exc:
+                    plan_gate_reason = f"plan_invalid:{str(exc)[:120]}"
+
         # 7) Analysis
         step_start = time.perf_counter()
         result = analyze(
@@ -524,6 +571,12 @@ def execute(
             _persist_semantic(day_dir, semantic_bundle, record)
         if plan_bundle is not None:
             _persist_plans(day_dir, plan_bundle, record)
+            if adoption_decision is not None and adoption_decision.mode("plan") != "shadow":
+                record.metadata["plan"]["adopted"] = plan_adopted
+                if plan_adopted:
+                    record.metadata["plan"]["adopted_primary"] = plan_primary_label
+                elif plan_gate_reason:
+                    record.metadata["plan"]["gate_reason"] = plan_gate_reason
         if execution_bundle is not None:
             _persist_execution(day_dir, execution_bundle, record)
             if adoption_decision is not None and adoption_decision.mode("execute") != "shadow":
@@ -576,7 +629,15 @@ def execute(
                 )
                 else None
             ),
-            provenance=execute_provenance,
+            provenance=(
+                {
+                    **(execute_provenance or {}),
+                    "plan_adopted": plan_adopted,
+                    "plan_primary": plan_primary_label,
+                }
+                if (execute_provenance is not None or plan_adopted)
+                else None
+            ),
         )
         latest_path = settings.output_dir / "latest.html"
         try:

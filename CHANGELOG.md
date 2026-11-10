@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.14-dev — LLM 阶段 6b-3：plan 采信
+
+- 新增核心纯函数适配器 `planning.adapt_plan`：`PlanDraft → AnalysisPlan`，无网络/无 llm import；
+  拒绝未知字段、角色错配、无指标、不支持图表；图表类型映射到既有 analyze step。
+- 管线 plan 采信：模式非 shadow + 计划来源 llm + 适配成功才替换规则计划；失败回退并记
+  `metadata.plan.gate_reason`，`status=success`。
+- `metadata.plan` 记录 `adopted/adopted_primary/gate_reason`；报告“数据来源”增加计划来源与主指标。
+- 测试 314 项（+10）。
+
 ## 1.0.13-dev — LLM 阶段 6b 复核整改
 
 - **P1 修复**：删除 `pipeline._format_kpi`，采信后的 KPI `formatted` 直接复用

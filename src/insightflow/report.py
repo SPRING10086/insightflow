@@ -164,15 +164,25 @@ def render_report(
         html = html.replace('<main class="wrap">', '<main class="wrap">' + section, 1)
 
     if provenance:
-        # Mixed-source transparency: only the reconciled primary total comes from
-        # the LLM sandbox; every other number in this report is rule-computed.
+        # Mixed-source transparency: plan and/or the reconciled primary total may
+        # come from the LLM track; every other number is rule-computed.
         adopted = "、".join(html_escape(str(item)) for item in provenance.get("adopted_metrics") or [])
         rule = "、".join(html_escape(str(item)) for item in provenance.get("rule_metrics") or [])
+        plan_part = ""
+        if provenance.get("plan_adopted"):
+            plan_primary = html_escape(str(provenance.get("plan_primary") or "—"))
+            plan_part = f"分析计划由 LLM 提供（主指标：{plan_primary}）；"
+        if adopted or rule:
+            details = (
+                f"主指标合计（{adopted or '—'}）由 LLM 沙箱计算并已与规则对账；"
+                f"其余指标（{rule or '—'}）与所有分组图表由规则引擎计算。"
+            )
+        else:
+            details = "其余数字与分组图表由规则引擎计算。"
         note = (
             '<div class="provenance-note" style="margin:0 0 12px;padding:8px 12px;'
             'border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-size:12px">'
-            f"数据来源：主指标合计（{adopted or '—'}）由 LLM 沙箱计算并已与规则对账；"
-            f"其余指标（{rule or '—'}）与所有分组图表由规则引擎计算。</div>"
+            f"数据来源：{plan_part}{details}</div>"
         )
         html = html.replace('<main class="wrap">', '<main class="wrap">' + note, 1)
 
