@@ -34,7 +34,7 @@ class LLMExecutionProvider:
         transport: Any | None = None,
         batch_budget_cny: float = 20.0,
         timeout_seconds: float = 10.0,
-        memory_mb: int = 512,
+        memory_mb: int = 1024,
         prompt_text: str | None = None,
         stats: Any | None = None,
         warn_prompt_tokens: int = 8000,

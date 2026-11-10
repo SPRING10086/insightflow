@@ -69,7 +69,7 @@ def build_execution_provider(
     transport: Any | None = None,
     batch_budget_cny: float = 20.0,
     timeout_seconds: float = 10.0,
-    memory_mb: int = 512,
+    memory_mb: int = 1024,
     request_timeout_seconds: float | None = None,
     transport_retries: int | None = None,
     max_structured_retries: int | None = None,

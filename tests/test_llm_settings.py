@@ -59,7 +59,7 @@ class DefaultsTests(unittest.TestCase):
             self.assertFalse(llm.feature_enabled(name))
         self.assertEqual(llm.budget_per_table_cny, 5.0)
         self.assertEqual(llm.budget_batch_cny, 20.0)
-        self.assertEqual(llm.memory_mb, 512)
+        self.assertEqual(llm.memory_mb, 1024)
         self.assertEqual(llm.retry_structured, 2)
 
     def test_truth_table(self):

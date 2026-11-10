@@ -86,7 +86,7 @@ class LLMSettings:
     budget_batch_cny: float = 20.0
     request_timeout_seconds: float = 60.0
     sandbox_timeout_seconds: float = 10.0
-    memory_mb: int = 512
+    memory_mb: int = 1024
     max_input_rows: int = 200_000
     retry_structured: int = 2
     retry_transport: int = 2
@@ -181,7 +181,7 @@ class LLMSettings:
             raise ConfigError("llm.sandbox 必须是对象")
         if set(sandbox) - {"memory_mb", "max_input_rows"}:
             raise ConfigError(f"llm.sandbox 包含未知键: {sorted(set(sandbox) - {'memory_mb', 'max_input_rows'})}")
-        memory_mb = require_int(sandbox.get("memory_mb", 512), "llm.sandbox.memory_mb", 64, 4096)
+        memory_mb = require_int(sandbox.get("memory_mb", 1024), "llm.sandbox.memory_mb", 64, 4096)
         max_input_rows = require_int(sandbox.get("max_input_rows", 200_000), "llm.sandbox.max_input_rows", 1, 10_000_000)
 
         retry = raw.get("retry", {})

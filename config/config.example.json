@@ -55,7 +55,7 @@
       "sandbox_seconds": 10
     },
     "sandbox": {
-      "memory_mb": 512,
+      "memory_mb": 1024,
       "max_input_rows": 200000
     },
     "retry": {

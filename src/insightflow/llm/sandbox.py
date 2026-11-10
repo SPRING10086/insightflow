@@ -410,7 +410,7 @@ def run_sandbox(
     *,
     allowed_columns: set[str] | list[str],
     timeout_seconds: float = 10.0,
-    memory_mb: int = 512,
+    memory_mb: int = 1024,
     skip_validation: bool = False,
     max_input_rows: int = MAX_INPUT_ROWS,
 ) -> dict:
@@ -442,8 +442,9 @@ def run_sandbox(
         env=env,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
-    # Two-phase: let the worker import pandas first, then cap the job.  A 512MB
-    # cap applied before imports would kill pandas itself.
+    # Two-phase: let the worker import pandas first, then cap the job.  The cap
+    # must stay above the pandas/numpy baseline commit (measured 524-530MB), so
+    # the default is 1024MB; a 512MB cap intermittently kills the worker.
     ready = proc.stdout.readline() if proc.stdout else b""
     if ready.strip() != b"READY":
         _kill_tree(proc)

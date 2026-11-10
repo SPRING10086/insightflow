@@ -191,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
             "result = {'metrics': {'total': float(df['revenue'].sum())},"
             " 'groups': {'columns': ['region'], 'rows': [[str(k), float(v)] for k, v in g.items()]}}"
         )
-        data = run_sandbox(code, frame, allowed_columns={"region", "revenue"}, timeout_seconds=20, memory_mb=512)
+        data = run_sandbox(code, frame, allowed_columns={"region", "revenue"}, timeout_seconds=20)
         smoke.check("worker_runs", abs(data["metrics"]["total"] - 600.0) < 1e-9, str(data["metrics"]))
         smoke.check("worker_groups", len(data["groups"]["rows"]) == 2, str(data["groups"]["rows"]))
 

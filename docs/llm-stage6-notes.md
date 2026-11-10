@@ -198,6 +198,20 @@ blockers: ["fallback_rate 0.2083 > 0.05"]
 
 > 灰度观测只统计与落盘，不改变默认 shadow 行为；`force_rules` 仍可一键回全规则。
 
+## 6c 复核 P1 修复：沙箱默认内存 512 → 1024
+
+复核实测 worker 导入 pandas 后基线 commit 524–530MB，512MB Job 上限低于基线，默认配置在系统紧张时间歇失败
+（安全回退可靠、无错误数字，但冒烟不稳定）。修复：
+
+- `LLMSettings.memory_mb`、`run_sandbox`、`ExecutorSettings.memory_mb`、`build_execution_provider`
+  默认统一为 **1024**；`config.example.json` 同步；合法范围仍 64–4096；
+- 冒烟脚本改用默认值（不再显式传 512），覆盖真实默认路径；
+- 新增 `test_default_memory_mb_succeeds`：不传 memory_mb 跑最小聚合并断言结果，消除默认值成功路径盲区；
+- 两阶段 Job Object、AST 白名单、输入/输出上限等护栏不变，只调整内存上限数值。
+
+验收：全量 330 测试 OK；便携包冒烟连续 3 次 17/17（见下）。
+
+
 
 
 
