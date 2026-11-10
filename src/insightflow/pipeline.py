@@ -79,6 +79,7 @@ from .semantic import (
     rule_artifact,
     save_artifacts,
 )
+from .semantic_adoption import SemanticAdoptionError, adopt_semantic_fields
 from .utils import (
     atomic_write_json,
     ensure_dir,
@@ -377,6 +378,31 @@ def execute(
             {key: field for key, field in clean_fields.items() if key in cleaned.columns},
             cleaned,
         )
+
+        # 5.5) Stage 6b-4 semantic adoption: LLM decides column meaning, while the
+        # canonical mapping/aggregation still come from the rule FieldSpec. Any
+        # coverage/role/unit problem drops the whole LLM schema.
+        semantic_adopted = False
+        semantic_gate_reason = ""
+        semantic_changed: list[str] = []
+        if (
+            semantic_bundle is not None
+            and adoption_decision is not None
+            and adoption_decision.mode("semantic") != "shadow"
+        ):
+            artifact = semantic_bundle["provider"]
+            if artifact.source_kind != "llm":
+                semantic_gate_reason = f"source_{artifact.source_kind}"
+            else:
+                try:
+                    adopted = adopt_semantic_fields(
+                        artifact, prepared.get("table_schemas") or [], analysis_fields
+                    )
+                    analysis_fields = adopted.fields
+                    semantic_adopted = True
+                    semantic_changed = list(adopted.changed)
+                except SemanticAdoptionError as exc:
+                    semantic_gate_reason = f"semantic_invalid:{exc.reason}"
         if prepared.get("header_repairs"):
             cleaning_report.garbled_repaired += int(prepared["header_repairs"])
         _add_step(
@@ -569,6 +595,12 @@ def execute(
         _write_artifacts(day_dir, result, plan, cleaned, cleaning_report, analysis_fields)
         if semantic_bundle is not None:
             _persist_semantic(day_dir, semantic_bundle, record)
+            if adoption_decision is not None and adoption_decision.mode("semantic") != "shadow":
+                record.metadata["semantic_schema"]["adopted"] = semantic_adopted
+                if semantic_adopted:
+                    record.metadata["semantic_schema"]["adopted_changes"] = semantic_changed
+                elif semantic_gate_reason:
+                    record.metadata["semantic_schema"]["gate_reason"] = semantic_gate_reason
         if plan_bundle is not None:
             _persist_plans(day_dir, plan_bundle, record)
             if adoption_decision is not None and adoption_decision.mode("plan") != "shadow":
@@ -634,8 +666,9 @@ def execute(
                     **(execute_provenance or {}),
                     "plan_adopted": plan_adopted,
                     "plan_primary": plan_primary_label,
+                    "semantic_adopted": semantic_adopted,
                 }
-                if (execute_provenance is not None or plan_adopted)
+                if (execute_provenance is not None or plan_adopted or semantic_adopted)
                 else None
             ),
         )

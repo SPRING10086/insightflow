@@ -127,5 +127,34 @@
 管线：gated 后 KPI 主指标变为 LLM 选择的订单量并带来源说明、非法计划回退规则且留 gate_reason、
 shadow 不采信、`force_rules` 不采信。
 
+## 6b-4 semantic 采信（2026-11-10）
+
+### 核心侧纯函数门禁
+
+`semantic_adoption.adopt_semantic_fields(artifact, table_schemas, rule_fields)`：
+
+- **覆盖完整**：每张表的所有业务列（排除 `__` 血缘列）都必须在 LLM 语义中出现，缺一列即整次回退
+  （`missing_column`）；
+- **关键角色不冲突**：规则判为 `date/id/metric` 的字段，LLM 角色必须一致，否则 `role_conflict` 整次回退；
+  非关键角色允许调整（如 dimension → metric），并记入 `changed` 列表；
+- **单位冲突**：规则与 LLM 都给出非空单位且不同 → `unit_conflict` 整次回退；
+- **可映射**：以规则 `column_map` 把原始列映射到 canonical；规则已丢弃的高基数列只允许 LLM 标为
+  `text/id`，若声明为 metric/dimension/date → `unknown_canonical` 回退；未知 canonical 不进入后续计算；
+- 采用 `dataclasses.replace` 生成新 FieldSpec，canonical/label/aggregation/value_format 仍来自规则，
+  **数字计算口径不变**。
+
+### 管线采信
+
+- 时机：清洗后、`build_plan` 前；成功时用采信后的字段集替代 `analysis_fields` 驱动计划与 `analyze()`；
+- 失败：保留规则字段，`metadata.semantic_schema.gate_reason = semantic_invalid:<reason>`，`status=success`；
+- 留痕：`metadata.semantic_schema` 增加 `adopted / adopted_changes / gate_reason`；
+- 报告顶部增加“字段语义由 LLM 识别”；与 plan/execute 来源说明可叠加。
+
+### 测试（9 项）
+
+适配器：角色一致采信、缺列、关键角色冲突、单位冲突、未知 canonical 声明为 metric、dimension→metric 允许；
+管线：gated 采信并显示来源、角色冲突回退且留 gate_reason、shadow 不采信。
+
+
 
 

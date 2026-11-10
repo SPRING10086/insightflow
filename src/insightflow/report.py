@@ -172,6 +172,7 @@ def render_report(
         if provenance.get("plan_adopted"):
             plan_primary = html_escape(str(provenance.get("plan_primary") or "—"))
             plan_part = f"分析计划由 LLM 提供（主指标：{plan_primary}）；"
+        semantic_part = "字段语义由 LLM 识别；" if provenance.get("semantic_adopted") else ""
         if adopted or rule:
             details = (
                 f"主指标合计（{adopted or '—'}）由 LLM 沙箱计算并已与规则对账；"
@@ -182,7 +183,7 @@ def render_report(
         note = (
             '<div class="provenance-note" style="margin:0 0 12px;padding:8px 12px;'
             'border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;color:#475569;font-size:12px">'
-            f"数据来源：{plan_part}{details}</div>"
+            f"数据来源：{semantic_part}{plan_part}{details}</div>"
         )
         html = html.replace('<main class="wrap">', '<main class="wrap">' + note, 1)
 

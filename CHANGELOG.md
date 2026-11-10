@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.15-dev — LLM 阶段 6b-4：semantic 采信
+
+- 新增核心纯函数门禁 `semantic_adoption.adopt_semantic_fields`：业务列全覆盖、关键角色
+  （date/id/metric）不得冲突、单位冲突回退、canonical 可映射；规则丢弃列只允许 text/id。
+- 管线在清洗后、生成计划前采信语义字段，失败回退规则字段并记 `semantic_invalid:<reason>`；
+  `metadata.semantic_schema` 记录 `adopted/adopted_changes/gate_reason`，报告标注“字段语义由 LLM 识别”。
+- 测试 323 项（+9）。
+
 ## 1.0.14-dev — LLM 阶段 6b-3：plan 采信
 
 - 新增核心纯函数适配器 `planning.adapt_plan`：`PlanDraft → AnalysisPlan`，无网络/无 llm import；
