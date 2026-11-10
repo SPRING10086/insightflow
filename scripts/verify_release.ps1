@@ -137,12 +137,15 @@ if ($WriteManifest -or -not (Test-Path $manifestPath)) {
 if ($SkipSignature) {
     Add-Row "signatures" "WARN" "skipped (-SkipSignature)"
 } else {
-    $signTargets = @("启动操作端.vbs", "启动操作端(排障).bat", "python\python.exe", "python\pythonw.exe")
+    # 注意：启动操作端(排障).bat 不纳入签名检查。Windows 没有为 .bat/.cmd 批处理注册
+    # Authenticode SIP（Set-AuthenticodeSignature 返回 "form ... not supported"），
+    # 批处理文件在平台层面无法签名。它只是技术排障备用入口，主入口为可签名的 .vbs。
+    $signTargets = @("启动操作端.vbs", "python\python.exe", "python\pythonw.exe")
     $unsigned = @()
     foreach ($rel in $signTargets) {
         $path = Join-Path $Dist $rel
         if (-not (Test-Path $path)) { continue }
-        $sig = Get-AuthenticodeSignature -Path $path
+        $sig = Get-AuthenticodeSignature -FilePath $path
         if ($sig.Status -ne "Valid") { $unsigned += ("$rel=" + $sig.Status) }
     }
     if ($unsigned.Count -eq 0) {

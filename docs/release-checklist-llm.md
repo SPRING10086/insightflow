@@ -10,23 +10,28 @@
 
 | 文件 | 说明 |
 |---|---|
-| `启动操作端.vbs` | 无黑框启动器（用户双击的入口） |
-| `启动操作端(排障).bat` | 保留控制台的排障入口 |
-| `run.bat` / `run.ps1` | 源码式启动脚本（如随包） |
-| `python/python.exe` | 包内解释器 |
-| `python/pythonw.exe` | 包内无控制台解释器 |
-| `python/python310.dll`、`python/vcruntime140.dll`、`python/*.dll` | 运行时依赖（按实际存在文件） |
+| `启动操作端.vbs` | 无黑框启动器（用户双击的入口），**必须签名** |
+| `python/python.exe` | 包内解释器，**必须签名** |
+| `python/pythonw.exe` | 包内无控制台解释器，**必须签名** |
+| `python/python310.dll`、`python/vcruntime140.dll`、`python/*.dll` | 运行时依赖（建议一并签名，按实际存在文件） |
+| `启动操作端(排障).bat` | 保留控制台的排障入口，**无法签名，见下方说明** |
 
-> 建议对**可执行文件与启动器**全部签名；纯数据/文档文件不需要。签名后重新计算清单哈希（见 §4）。
+> **平台限制（重要）**：Windows 没有为 `.bat`/`.cmd` 批处理注册 Authenticode SIP，
+> 对批处理执行 `Set-AuthenticodeSignature` 会返回 *"The form specified for the subject is not
+> supported"*，签名块无法写入；`Get-AuthenticodeSignature` 对任何 bat（即使从未签名）也返回
+> UnknownError。这是 Windows 平台行为，不是证书或操作问题。该 bat 仅为技术排障备用入口，
+> 普通用户走已签名的 `.vbs` 主入口，故不影响分发安全。`verify_release.ps1` 已将其排除在签名检查外。
+>
+> 对**可签名的可执行文件与启动器**全部签名；纯数据/文档文件不需要。签名后重新计算清单哈希（见 §4）。
 
 ## 2. 签名步骤（Windows SDK / signtool）
 
 ```powershell
 # 1) 准备证书（pfx 或 USB token），确认时间戳服务可用
 # 2) 对每个文件签名（示例域名按你的 CA 调整）
+# 排障 .bat 无法签名（平台限制，见 §1），不在此清单内
 $files = @(
   "dist\InsightFlow\启动操作端.vbs",
-  "dist\InsightFlow\启动操作端(排障).bat",
   "dist\InsightFlow\python\python.exe",
   "dist\InsightFlow\python\pythonw.exe"
 )
@@ -36,7 +41,7 @@ foreach ($f in $files) {
 
 # 3) 验证签名
 foreach ($f in $files) {
-  Get-AuthenticodeSignature $f | Select-Object Path, Status, SignerCertificate
+  Get-AuthenticodeSignature -FilePath $f | Select-Object Status, SignerCertificate
 }
 ```
 
