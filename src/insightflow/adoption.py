@@ -91,8 +91,5 @@ def resolve_adoption(llm: Any, env: Mapping[str, str] | None = None) -> Adoption
     if modes["execute"] != "shadow" and modes["plan"] == "shadow":
         modes["execute"] = "shadow"
         reasons["execute"] = "upstream_plan_shadow"
-    if modes["narrative"] != "shadow" and modes["execute"] == "shadow":
-        modes["narrative"] = "shadow"
-        reasons["narrative"] = "upstream_execute_shadow"
 
     return AdoptionDecision(modes=modes, reasons=reasons, force_rules=force_rules)

@@ -4,7 +4,8 @@
 
 ## 输入
 
-- `spec`：目标指标（metric 列名）、目标维度（dimension 列名，可为空）、分组上限；
+- `spec`：目标指标（metric 列名）、目标维度（dimension 列名，可为空）、分组上限，
+  以及 `aggregation`（`SUM` 求和 / `AVG` 均值）；
 - `fields`：字段语义（name/role/unit）；
 - `samples`：前 10 行脱敏样本。
 
@@ -33,7 +34,8 @@
 
 ## 语义要求
 
-- `total` = 指定 metric 列的求和（`float(df["列"].sum())`）；
+- `total` 按 `spec.aggregation` 计算：`SUM` 用 `float(df["列"].sum())`；`AVG` 用
+  `float(df["列"].mean())`（百分比/比率字段通常是 AVG）。分组同理（`.sum()` 或 `.mean()`）。
 - 有维度时按维度分组求和，组名转成字符串；
 - 不要过滤行，除非 spec 明确要求；不要改口径；
 - 代码尽量短，10 行以内。

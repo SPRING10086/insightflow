@@ -45,8 +45,9 @@
    {"force_rules": false, "final_mode": {"semantic": "..."}, "downgrade_reason": {"plan": "upstream_semantic_shadow"}}
    ```
    6b 各模块直接消费 `final_mode` / `downgrade_reason`。
-3. **narrative 依赖 execute**：解析时若 `narrative` 非 shadow 而 `execute` 仍 shadow → narrative 降为
-   shadow，原因 `upstream_execute_shadow`（数据流：叙事数字来自确定性结果，需执行链已确定）。
+3. **narrative 独立采信（复核 issue 2 纠正）**：narrative 的 facts 来自确定性 `build_facts`，不依赖
+   execute 采信；已移除 6b-1 中“narrative 依赖 execute”的强制降级，narrative 可单独开 gated/primary，
+   保留其自身 `validate_narrative` 门槛。
 
 ### narrative 采信落地
 
@@ -57,13 +58,13 @@
 | `primary` | 与 gated 相同的校验门槛，失败仍回退规则洞察；`force_rules` 时一律不插入 |
 
 > 迁移提示：阶段 5 中“开启 narrative feature 即渲染区块”，6b 起默认 `shadow` 不再渲染；
-> 需要渲染时必须显式 `adoption.narrative = gated/primary`（且上游 execute 非 shadow）。
+> 需要渲染时必须显式 `adoption.narrative = gated/primary`（narrative 可独立采信，不依赖 execute）。
 
 ### 测试（新增 9 项）
 
 - 环境变量覆盖配置（`0` 关掉配置 force、`true` 强制全 shadow）；
 - `final_mode/downgrade_reason/force_rules` 结构；
-- narrative 缺 execute 上游 → 降级且原因正确；
+- narrative 可独立采信（不要求 execute 非 shadow）；
 - shadow 不渲染但保留产物、gated 渲染、gated 下 XSS 回退、force_rules 阻止采信、primary 无 provider 安全。
 
 ## 6b-2 execute 采信（过渡方案 b，2026-11-10）
@@ -81,6 +82,10 @@
 ### 采信范围（方案 b 的明确边界）
 
 - **只采信已对账的主指标合计**：覆盖 KPI 中 `key == plan.primary_metric` 的 `value/formatted`；
+  `formatted` **直接复用 analyze 的 `_format_value(value, _value_type(metric, fields))`**，
+  不再自维护格式化（修复复核 P1：number 被取整、percent 漏乘 100）；
+- 执行聚合按字段 `aggregation` 进行：`SUM` 求和、`AVG` 求均值（百分比/比率字段为 AVG），
+  `rule_execute` 与代码生成提示词同步，保证 percent 类主指标对账与展示口径一致；
 - **其余指标与所有分组/图表仍为规则计算**；报告顶部插入“数据来源”说明：
   「主指标合计（销售额）由 LLM 沙箱计算并已与规则对账；其余指标（…）与所有分组图表由规则引擎计算。」
 - `metadata.execution` 增加 `adopted / adopted_metrics / rule_metrics / gate_reason`，供 6c 统计与审计；

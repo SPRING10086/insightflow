@@ -144,11 +144,13 @@ class ResolveTests(unittest.TestCase):
         self.assertTrue(decision.force_rules)
         self.assertTrue(all(mode == "shadow" for mode in decision.modes.values()))
 
-    def test_narrative_requires_execute(self):
+    def test_narrative_is_independent(self):
+        # Facts come from deterministic build_facts, not from execute adoption;
+        # narrative must be adoptable on its own (review 6b-1 issue 2).
         llm = self._llm(adoption={"narrative": "gated"})
         decision = resolve_adoption(llm)
-        self.assertEqual(decision.modes["narrative"], "shadow")
-        self.assertEqual(decision.reasons["narrative"], "upstream_execute_shadow")
+        self.assertEqual(decision.modes["narrative"], "gated")
+        self.assertNotIn("narrative", decision.reasons)
 
     def test_decision_schema(self):
         decision = resolve_adoption(self._llm(adoption={"semantic": "gated"}))

@@ -26,6 +26,7 @@ class ExecutionSpec:
     metric_label: str
     dimension: str = ""  # original column name
     dimension_label: str = ""
+    aggregation: str = "SUM"  # SUM | AVG (percent/rate metrics are AVG)
     group_limit: int = GROUP_LIMIT
 
 
@@ -78,11 +79,15 @@ def rule_execute(spec: ExecutionSpec, frame: Any) -> ExecutionResult:
     if spec.metric not in frame.columns:
         raise KeyError(f"metric column missing: {spec.metric}")
     series = frame[spec.metric]
-    total = float(series.sum())
+    if str(spec.aggregation).upper() == "AVG":
+        total = float(series.mean())
+    else:
+        total = float(series.sum())
     metrics = {"total": total}
     groups: dict[str, Any] = {"columns": [], "rows": []}
     if spec.dimension and spec.dimension in frame.columns:
-        grouped = frame.groupby(spec.dimension, dropna=False)[spec.metric].sum()
+        grouped = frame.groupby(spec.dimension, dropna=False)[spec.metric]
+        grouped = grouped.mean() if str(spec.aggregation).upper() == "AVG" else grouped.sum()
         grouped = grouped.sort_values(ascending=False).head(spec.group_limit)
         groups = {
             "columns": [spec.dimension],

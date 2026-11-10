@@ -20,7 +20,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .analysis import analyze
+from .analysis import _format_value, _value_type, analyze
 from .cleaning import clean_frame
 from .config import Settings, load_settings
 from .discovery import SourceNotFoundError, discover_files
@@ -75,8 +75,6 @@ from .utils import (
     atomic_write_json,
     ensure_dir,
     file_fingerprint,
-    fmt_int,
-    fmt_money,
     humanize_duration,
     jsonable,
     now_local,
@@ -481,7 +479,9 @@ def execute(
                 for kpi in result.kpis:
                     if kpi.key == primary:
                         kpi.value = llm_total
-                        kpi.formatted = _format_kpi(llm_total, field)
+                        # Reuse the analysis formatter so money/int/percent/number
+                        # all match what the rule path would display.
+                        kpi.formatted = _format_value(llm_total, _value_type(primary, analysis_fields))
                         break
                 adopted_label = field.label if field is not None else primary
                 execute_provenance = {
@@ -867,6 +867,7 @@ def _build_execution_bundle(
         metric_label=metric_field.label,
         dimension=(getattr(plan, "primary_dimension", "") or "") if dimension else "",
         dimension_label=dimension.label if dimension else "",
+        aggregation=str(getattr(metric_field, "aggregation", "SUM") or "SUM").upper(),
     )
     allowed = [str(column) for column in frame.columns if not str(column).startswith("__")]
     rule = rule_execute(spec, frame)
@@ -989,16 +990,6 @@ def _persist_narrative(day_dir: Path, bundle: dict[str, Any], record: RunRecord)
         "placeholders": len(bundle["rendered"].get("mapping") or {}),
         "files": [path.name for path in written],
     }
-
-
-def _format_kpi(value: float, field: Any | None) -> str:
-    """Format an adopted KPI with the same conventions as the analysis layer."""
-    unit = str(getattr(field, "unit", "") or "")
-    if unit in {"%", "％"}:
-        return f"{value:.1f}%"
-    if unit == "元":
-        return fmt_money(value)
-    return fmt_int(value)
 
 
 def _collect_llm_stats(

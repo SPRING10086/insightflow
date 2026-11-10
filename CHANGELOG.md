@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.13-dev — LLM 阶段 6b 复核整改
+
+- **P1 修复**：删除 `pipeline._format_kpi`，采信后的 KPI `formatted` 直接复用
+  `analyze._format_value(value, _value_type(...))`；number 不再被取整、percent 不再漏乘 100。
+- 执行聚合支持 `SUM/AVG`（百分比/比率字段为 AVG），`rule_execute` 与代码生成提示词同步；
+  新增 number/percent 主指标采信回归测试（formatted 与 analyze 口径逐字相等）。
+- **移除 narrative→execute 强制依赖**（复核 issue 2）：narrative 的 facts 来自确定性 `build_facts`，
+  可独立采信；6b-1 的 `upstream_execute_shadow` 降级删除。
+- 测试 304 项。
+
 ## 1.0.12-dev — LLM 阶段 6b-2：execute 采信（过渡方案 b）
 
 - execute 采信门槛：模式非 shadow + 对账通过 + source llm + memory_guard job + 无错误 + 有主指标。
