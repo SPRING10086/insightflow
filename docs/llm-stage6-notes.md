@@ -333,6 +333,19 @@ readiness.ready = true, blockers = []
 
 证据：[docs/llm-stage6-gray.json](llm-stage6-gray.json)（12 份 run_record + 聚合）。
 
+## 6d 任务 4（本机部分）：重签、公钥、清单与验签
+
+- 新增 `scripts/sign_dist.ps1`：按主题查找自签证书，签 `启动操作端.vbs`、`python.exe`、`pythonw.exe`
+  及 `python3.dll/python310.dll/vcruntime140*.dll`，导出 `InsightFlow-TestRoot.cer`，安装 CurrentUser 根，
+  最后调用 `verify_release.ps1 -WriteManifest`。
+- 签名结果：7 个文件全部 **Valid**（vbs 由 NotSigned → Valid）；`.bat` 按平台限制不签。
+- 本机 `verify_release.ps1 -RequireSignature`：**FAIL=0 WARN=0 / 8 项**（manifest 9 文件匹配、signatures all valid、
+  smoke 17/17）；bundled 冒烟 **17/17**。
+- 交付文档：`docs/llm-stage6-6d-task4-signing.md`（证据）、`docs/llm-stage6-6d-task4-vm-signoff.md`
+  （VM 操作手册 + 签核表模板）。
+- 未完成：干净 VM 回归与签核表回填（依赖外部 VM/运维）；公网分发如需 CA 证书由用户提供后同流程重签。
+
+
 
 
 

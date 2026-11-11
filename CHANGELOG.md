@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.23-dev — 6d 任务 4：本机重签与验签
+
+- 新增 `scripts/sign_dist.ps1`：签 3 个必需文件 + 运行时 DLL、导出测试公钥、重算哈希清单。
+- 本机 `verify_release.ps1 -RequireSignature`：FAIL=0 WARN=0；bundled 冒烟 17/17。
+- 交付签名证据与 VM 操作手册/签核模板；干净 VM 回归待外部资源执行。
+
 ## 1.0.22-dev — 6d 任务 3：回退根因修复 + 灰度达标
 
 - 单位确定性归一 + 列名单位提示；plan 只暴露实际分析字段；叙事 fact 规范化/`total.rows` 映射；
