@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.20-dev — 6d 任务 1 整改 B：Job 句柄泄漏
+
+- `_win_job` 显式声明 ctypes 签名，`try/finally` 在成功与失败路径统一关闭进程/job 句柄；
+  LimitFlags 仍 0x100、无 KILL_ON_JOB_CLOSE，内存上限与两阶段流程不变。
+- 新增 Windows 句柄回归测试（8 次调用净增 ≤2）；基线 `51fea19` 上净增 +8、修复后通过（红→绿）。
+- 全量 347 测试 OK；便携包冒烟 17/17。
+
 ## 1.0.19-dev — 6d 任务 1 整改 A：prompt 去循环
 
 - execution_v1.md 示例改为逐指标显式展开，删除 for 循环与下划线变量，指令/自检同步禁止循环。

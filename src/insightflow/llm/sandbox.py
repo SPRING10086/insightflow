@@ -331,21 +331,45 @@ def _win_job(pid: int, memory_bytes: int) -> bool:
             ]
 
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+        ]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+
         job = kernel32.CreateJobObjectW(None, None)
         if not job:
             return False
-        info = EXTENDED()
-        info.BasicLimitInformation.LimitFlags = 0x00000100  # JOB_OBJECT_LIMIT_PROCESS_MEMORY
-        info.ProcessMemoryLimit = memory_bytes
-        if not kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
-            return False
-        handle = kernel32.OpenProcess(0x0101, False, int(pid))  # SET_QUOTA | TERMINATE
-        if not handle:
-            return False
-        if not kernel32.AssignProcessToJobObject(job, handle):
-            return False
-        kernel32.CloseHandle(handle)
-        return True
+        handle = None
+        try:
+            info = EXTENDED()
+            info.BasicLimitInformation.LimitFlags = 0x00000100  # JOB_OBJECT_LIMIT_PROCESS_MEMORY
+            info.ProcessMemoryLimit = memory_bytes
+            if not kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+                return False
+            handle = kernel32.OpenProcess(0x0101, False, int(pid))  # SET_QUOTA | TERMINATE
+            if not handle:
+                return False
+            if not kernel32.AssignProcessToJobObject(job, handle):
+                return False
+            return True
+        finally:
+            # Close every handle on every path; the job has no KILL_ON_JOB_CLOSE
+            # flag, so closing the handle does not terminate the assigned worker.
+            if handle:
+                kernel32.CloseHandle(handle)
+            if job:
+                kernel32.CloseHandle(job)
     except Exception:  # noqa: BLE001 - guard failure means "no memory cap"
         return False
 

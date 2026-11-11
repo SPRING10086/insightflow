@@ -255,6 +255,26 @@ blockers: ["fallback_rate 0.2083 > 0.05"]
   4. 该 code 在 `run_sandbox` 中产出两指标 metrics 与 metric_groups；
   5. 反向断言 `for` 循环仍被 `validate_code` 拒绝（白名单未放宽）。
 
+## 6d 任务 1 整改 B：`_win_job` Job 句柄泄漏（P2）
+
+复核发现 `_win_job` 创建 Job 句柄后四条路径均未关闭，每次调用净泄漏 1 个句柄
+（GetProcessHandleCount 实测 8 次 +8）。
+
+修复：
+
+- `CreateJobObjectW / SetInformationJobObject / OpenProcess / AssignProcessToJobObject / CloseHandle`
+  全部显式声明 `argtypes/restype`（句柄 `wintypes.HANDLE`、布尔 `wintypes.BOOL`），消除 64 位截断隐患；
+- `try/finally` 统一句柄生命周期：成功路径同时关闭进程句柄与 job 句柄，三条失败路径也只关闭已成功创建的句柄；
+- Job 无 `KILL_ON_JOB_CLOSE`，关闭句柄不会终止已加入的 worker；LimitFlags 仍为 `0x100`，
+  两阶段装配、内存上限、Popen 参数、返回 bool 语义均不变。
+
+回归测试 `tests/test_sandbox_job_handles.py`（Windows 实跑，非 Windows 跳过）：
+
+- 显式签名 `GetProcessHandleCount`，预热后基线，连续 8 次 `_win_job`（每次真实子进程）；
+- 净增量容差 ±2，不随次数线性增长；每次返回 True、子进程正常退出；
+- **红→绿证据**：同一测试在基线 `51fea19` 上净增 **+8**（失败），修复后净增 ≤2（通过）。
+
+
 
 
 
