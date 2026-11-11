@@ -31,11 +31,26 @@ class AggExecution:
         self.offset = offset
 
     def execute(self, spec, frame, allowed_columns, fields=None):
-        series = frame[spec.metric].astype(float)
-        base = series.mean() if str(spec.aggregation).upper() == "AVG" else series.sum()
+        metrics: dict[str, float] = {}
+        metric_groups: dict[str, dict] = {}
+        for request in spec.requested_metrics():
+            series = frame[request.metric].astype(float)
+            base = series.mean() if str(request.aggregation).upper() == "AVG" else series.sum()
+            metrics[request.metric] = float(base) + self.offset
+            metric_groups[request.metric] = {"columns": [], "rows": []}
+        if not spec.metrics:
+            only = list(metrics.values())[0]
+            return ExecutionResult(
+                metrics={"total": only},
+                groups={"columns": [], "rows": []},
+                source_kind="llm",
+                cost_cny=0.01,
+                latency_ms=5,
+            )
         return ExecutionResult(
-            metrics={"total": float(base) + self.offset},
+            metrics=metrics,
             groups={"columns": [], "rows": []},
+            metric_groups=metric_groups,
             source_kind="llm",
             cost_cny=0.01,
             latency_ms=5,

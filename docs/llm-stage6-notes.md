@@ -211,6 +211,35 @@ blockers: ["fallback_rate 0.2083 > 0.05"]
 
 验收：全量 330 测试 OK；便携包冒烟连续 3 次 17/17（见下）。
 
+## 6d 任务 1：execute 对账 (b) → (a) 全指标对账（2026-11-11）
+
+### 契约扩展
+
+- `ExecutionSpec.metrics: list[MetricRequest]`（metric/label/aggregation）；`requested_metrics()` 统一取集合；
+  单指标旧调用（不传 metrics）仍输出 `{"total": ...}`，向后兼容。
+- `rule_execute` 逐指标按各自 `aggregation`（SUM/AVG）计算 total，并逐指标产出 `metric_groups`；
+  `groups` 保留主指标分组供旧接口读取。
+- 沙箱输出新增**可选** `metric_groups`（每指标 `{columns, rows}`），校验沿用同一套行数/字节/有限数限制；
+  `metrics` 仍为每指标一个数字，AST 白名单、Job、输入输出上限不变。
+- `reconcile` 逐指标对账：total 用 `TOTAL_TOLERANCE`，分组键与分组值用 `RATIO_TOLERANCE`；
+  缺指标、NaN/Inf、非数值、分组键缺失/多余均记 problems、`accepted=false`。
+- 采信 **all-or-nothing**：任一指标对账不过 → 整次不采信、回退规则、`gate_reason=reconcile_mismatch`；
+  全部通过 → 所有被覆盖 KPI（按 canonical key）统一替换为沙箱数字，格式化复用 analyze 口径。
+
+### 覆盖范围
+
+- 执行/对账覆盖 `plan.metrics` 中的全部 metric 字段（与 KPI 口径一致）；派生指标（如客单价）仍由规则计算，
+  报告“数据来源”逐项列出 LLM 采信指标与规则指标。
+- `metadata.execution` 增加 `metric_count` 与逐指标 `metrics` 明细（rule/llm/ok）。
+
+### 测试与独立复算
+
+- 单测 11 项：多指标规则基线、整体一致、**逐指标** total/分组值/分组键篡改、缺指标、NaN、非数值、
+  管线双指标采信、单指标失败阻断全部采信；provider 级多指标代码 + `metric_groups` 解析。
+- 独立复算脚本 `scripts/execution_reconcile_check.py`：纯 pandas 复算 total/分组，逐项一致；
+  7 个篡改场景全部被拒；证据 `docs/llm-stage6-6d-task1-check.json`（`all_checks_pass=true`）。
+
+
 
 
 

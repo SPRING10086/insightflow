@@ -52,12 +52,36 @@ class FakeExecution:
     def execute(self, spec, frame, allowed_columns, fields=None):
         if self.fail:
             raise RuntimeError("sandbox exploded")
-        total = float(frame[spec.metric].sum()) + self.offset
-        groups = {"columns": [], "rows": []}
-        if spec.dimension:
-            grouped = frame.groupby(spec.dimension)[spec.metric].sum().head(50)
-            groups = {"columns": [spec.dimension], "rows": [[str(k), float(v)] for k, v in grouped.items()]}
-        return ExecutionResult(metrics={"total": total}, groups=groups, source_kind="llm", cost_cny=0.01, latency_ms=9)
+        metrics: dict[str, float] = {}
+        metric_groups: dict[str, dict] = {}
+        primary_groups = {"columns": [], "rows": []}
+        for request in spec.requested_metrics():
+            series = frame[request.metric].astype(float)
+            base = series.mean() if request.aggregation.upper() == "AVG" else series.sum()
+            groups = {"columns": [], "rows": []}
+            if spec.dimension:
+                grouped = frame.groupby(spec.dimension)[request.metric]
+                grouped = grouped.mean() if request.aggregation.upper() == "AVG" else grouped.sum()
+                groups = {
+                    "columns": [spec.dimension],
+                    "rows": [[str(k), float(v)] for k, v in grouped.head(50).items()],
+                }
+            if spec.metrics:
+                metrics[request.metric] = float(base) + self.offset
+                metric_groups[request.metric] = groups
+                if request.metric == spec.metric:
+                    primary_groups = groups
+            else:
+                metrics = {"total": float(base) + self.offset}
+                primary_groups = groups
+        return ExecutionResult(
+            metrics=metrics,
+            groups=primary_groups,
+            metric_groups=metric_groups,
+            source_kind="llm",
+            cost_cny=0.01,
+            latency_ms=9,
+        )
 
 
 class ExecutionPipelineTests(unittest.TestCase):

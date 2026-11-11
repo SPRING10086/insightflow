@@ -60,7 +60,7 @@ class LLMExecutionProvider:
             for row in frame.head(10).to_dict("records")
         ]
         payload = {
-            "spec": spec.__dict__,
+            "spec": spec.to_dict(),
             "fields": [{"name": field.name, "role": field.role, "unit": field.unit} for field in fields],
             "samples": samples,
         }
@@ -133,6 +133,7 @@ class LLMExecutionProvider:
             return ExecutionResult(
                 metrics={str(key): float(value) for key, value in data["metrics"].items()},
                 groups=data["groups"],
+                metric_groups=dict(data.get("metric_groups") or {}),
                 source_kind="llm",
                 memory_guard="job",
                 cost_cny=code_artifact.cost_cny,

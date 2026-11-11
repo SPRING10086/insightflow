@@ -10,13 +10,31 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from insightflow.execution import ExecutionSpec  # noqa: E402
+from insightflow.execution import ExecutionSpec, MetricRequest  # noqa: E402
 from insightflow.llm.client import CostLimitExceeded, LLMConfig  # noqa: E402
 from insightflow.llm.executor import LLMExecutionProvider  # noqa: E402
 from insightflow.llm.sandbox import SandboxViolation  # noqa: E402
 
 FRAME = pd.DataFrame({"region": ["A", "A", "B"], "revenue": [100.0, 200.0, 300.0]})
 SPEC = ExecutionSpec(table="dataset", metric="revenue", metric_label="销售额", dimension="region", dimension_label="区域")
+MULTI_SPEC = ExecutionSpec(
+    table="dataset",
+    metric="revenue",
+    metric_label="销售额",
+    dimension="region",
+    dimension_label="区域",
+    metrics=[MetricRequest("revenue", "销售额", "SUM")],
+)
+MULTI_FRAME = FRAME.assign(orders=[1.0, 2.0, 3.0])
+MULTI_SPEC.metrics.append(MetricRequest("orders", "订单量", "SUM"))
+MULTI_CODE = (
+    "metrics = {'revenue': float(df['revenue'].sum()), 'orders': float(df['orders'].sum())}\n"
+    "g1 = df.groupby('region')['revenue'].sum()\n"
+    "g2 = df.groupby('region')['orders'].sum()\n"
+    "metric_groups = {'revenue': {'columns': ['region'], 'rows': [[str(k), float(v)] for k, v in g1.items()]},"
+    " 'orders': {'columns': ['region'], 'rows': [[str(k), float(v)] for k, v in g2.items()]}}\n"
+    "result = {'metrics': metrics, 'metric_groups': metric_groups, 'groups': metric_groups['revenue']}"
+)
 
 GOOD = (
     "g = df.groupby('region')['revenue'].sum()\n"
@@ -49,6 +67,14 @@ class ExecutionProviderTests(unittest.TestCase):
         self.assertEqual(result.groups["columns"], ["region"])
         self.assertEqual(result.source_kind, "llm")
         self.assertGreater(result.cost_cny, 0)
+
+    def test_multi_metric_code_and_metric_groups(self):
+        provider = LLMExecutionProvider(_config(), transport=lambda *args: (200, _response(MULTI_CODE)), memory_mb=2048)
+        result = provider.execute(MULTI_SPEC, MULTI_FRAME, ["region", "revenue", "orders"], [])
+        self.assertAlmostEqual(result.metrics["revenue"], 600.0)
+        self.assertAlmostEqual(result.metrics["orders"], 6.0)
+        self.assertEqual(set(result.metric_groups), {"revenue", "orders"})
+        self.assertEqual(result.groups["columns"], ["region"])
 
     def test_bad_code_retries_once_then_raises(self):
         calls: list[int] = []

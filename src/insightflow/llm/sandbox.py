@@ -369,13 +369,30 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
+def _validate_groups(groups: object, label: str) -> None:
+    if not isinstance(groups, dict) or set(groups) != {"columns", "rows"}:
+        raise SandboxOutputError(f"{label} must contain exactly columns and rows")
+    columns, rows = groups["columns"], groups["rows"]
+    if not isinstance(columns, list) or not all(isinstance(item, str) for item in columns):
+        raise SandboxOutputError(f"{label} columns must be strings")
+    if not isinstance(rows, list) or len(rows) > MAX_OUTPUT_ROWS:
+        raise SandboxOutputError(f"{label} rows exceed the limit")
+    for row in rows:
+        if not isinstance(row, list):
+            raise SandboxOutputError(f"each {label} row must be a list")
+        for item in row:
+            if isinstance(item, bool) or not isinstance(item, (str, int, float)):
+                raise SandboxOutputError(f"{label} row values must be strings or numbers")
+            if isinstance(item, float) and not math.isfinite(item):
+                raise SandboxOutputError(f"{label} row contains a non-finite number")
+
+
 def _validate_output(data: object) -> dict:
     if not isinstance(data, dict):
         raise SandboxOutputError("output must be a JSON object")
-    if set(data) != {"metrics", "groups"}:
-        raise SandboxOutputError("output must contain exactly metrics and groups")
+    if set(data) not in ({"metrics", "groups"}, {"metrics", "groups", "metric_groups"}):
+        raise SandboxOutputError("output must contain exactly metrics, groups and optional metric_groups")
     metrics = data["metrics"]
-    groups = data["groups"]
     if not isinstance(metrics, dict) or len(metrics) > MAX_OUTPUT_METRICS:
         raise SandboxOutputError("metrics must be an object within size limits")
     for name, value in metrics.items():
@@ -383,21 +400,15 @@ def _validate_output(data: object) -> dict:
             raise SandboxOutputError("metric values must be plain numbers")
         if not math.isfinite(float(value)):
             raise SandboxOutputError("metric value is not finite")
-    if not isinstance(groups, dict) or set(groups) != {"columns", "rows"}:
-        raise SandboxOutputError("groups must contain exactly columns and rows")
-    columns, rows = groups["columns"], groups["rows"]
-    if not isinstance(columns, list) or not all(isinstance(item, str) for item in columns):
-        raise SandboxOutputError("group columns must be strings")
-    if not isinstance(rows, list) or len(rows) > MAX_OUTPUT_ROWS:
-        raise SandboxOutputError("group rows exceed the limit")
-    for row in rows:
-        if not isinstance(row, list):
-            raise SandboxOutputError("each group row must be a list")
-        for item in row:
-            if isinstance(item, bool) or not isinstance(item, (str, int, float)):
-                raise SandboxOutputError("group row values must be strings or numbers")
-            if isinstance(item, float) and not math.isfinite(item):
-                raise SandboxOutputError("group row contains a non-finite number")
+    _validate_groups(data["groups"], "groups")
+    if "metric_groups" in data:
+        metric_groups = data["metric_groups"]
+        if not isinstance(metric_groups, dict) or len(metric_groups) > MAX_OUTPUT_METRICS:
+            raise SandboxOutputError("metric_groups must be an object within size limits")
+        for name, value in metric_groups.items():
+            if not isinstance(name, str):
+                raise SandboxOutputError("metric_groups keys must be strings")
+            _validate_groups(value, f"metric_groups[{name}]")
     encoded = json.dumps(data, ensure_ascii=False)
     if len(encoded.encode("utf-8")) > MAX_OUTPUT_BYTES:
         raise SandboxOutputError("output exceeds the byte limit")

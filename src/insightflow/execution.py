@@ -20,6 +20,13 @@ GROUP_LIMIT = 50
 
 
 @dataclass
+class MetricRequest:
+    metric: str
+    label: str = ""
+    aggregation: str = "SUM"
+
+
+@dataclass
 class ExecutionSpec:
     table: str
     metric: str  # original column name
@@ -28,6 +35,27 @@ class ExecutionSpec:
     dimension_label: str = ""
     aggregation: str = "SUM"  # SUM | AVG (percent/rate metrics are AVG)
     group_limit: int = GROUP_LIMIT
+    metrics: list[MetricRequest] = field(default_factory=list)
+
+    def requested_metrics(self) -> list[MetricRequest]:
+        if self.metrics:
+            return list(self.metrics)
+        return [MetricRequest(self.metric, self.metric_label, self.aggregation)]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "table": self.table,
+            "metric": self.metric,
+            "metric_label": self.metric_label,
+            "dimension": self.dimension,
+            "dimension_label": self.dimension_label,
+            "aggregation": self.aggregation,
+            "group_limit": self.group_limit,
+            "metrics": [
+                {"metric": item.metric, "label": item.label, "aggregation": item.aggregation}
+                for item in self.requested_metrics()
+            ],
+        }
 
 
 @dataclass
@@ -42,6 +70,7 @@ class CodeArtifact:
 class ExecutionResult:
     metrics: dict[str, float] = field(default_factory=dict)
     groups: dict[str, Any] = field(default_factory=lambda: {"columns": [], "rows": []})
+    metric_groups: dict[str, dict[str, Any]] = field(default_factory=dict)
     source_kind: str = "llm"
     memory_guard: str = "job"
     error: str = ""
@@ -57,6 +86,7 @@ class ExecutionResult:
             "latency_ms": self.latency_ms,
             "metrics": dict(self.metrics),
             "groups": self.groups,
+            "metric_groups": dict(self.metric_groups),
         }
 
 
@@ -74,63 +104,147 @@ class ExecutionProvider(Protocol):
         ...
 
 
+def _aggregate(series: Any, aggregation: str) -> float:
+    return float(series.mean()) if str(aggregation).upper() == "AVG" else float(series.sum())
+
+
+def _groups_for(frame: Any, spec: ExecutionSpec, metric: str, aggregation: str) -> dict[str, Any]:
+    if not spec.dimension or spec.dimension not in frame.columns:
+        return {"columns": [], "rows": []}
+    grouped = frame.groupby(spec.dimension, dropna=False)[metric]
+    grouped = grouped.mean() if str(aggregation).upper() == "AVG" else grouped.sum()
+    grouped = grouped.sort_values(ascending=False).head(spec.group_limit)
+    return {"columns": [spec.dimension], "rows": [[str(key), float(value)] for key, value in grouped.items()]}
+
+
 def rule_execute(spec: ExecutionSpec, frame: Any) -> ExecutionResult:
     """Deterministic baseline computed on the same cleaned frame."""
-    if spec.metric not in frame.columns:
-        raise KeyError(f"metric column missing: {spec.metric}")
-    series = frame[spec.metric]
-    if str(spec.aggregation).upper() == "AVG":
-        total = float(series.mean())
-    else:
-        total = float(series.sum())
-    metrics = {"total": total}
-    groups: dict[str, Any] = {"columns": [], "rows": []}
-    if spec.dimension and spec.dimension in frame.columns:
-        grouped = frame.groupby(spec.dimension, dropna=False)[spec.metric]
-        grouped = grouped.mean() if str(spec.aggregation).upper() == "AVG" else grouped.sum()
-        grouped = grouped.sort_values(ascending=False).head(spec.group_limit)
-        groups = {
-            "columns": [spec.dimension],
-            "rows": [[str(key), float(value)] for key, value in grouped.items()],
-        }
-    return ExecutionResult(metrics=metrics, groups=groups, source_kind="rule", memory_guard="none")
+    requests = spec.requested_metrics()
+    for request in requests:
+        if request.metric not in frame.columns:
+            raise KeyError(f"metric column missing: {request.metric}")
+    metrics: dict[str, float] = {}
+    metric_groups: dict[str, dict[str, Any]] = {}
+    for request in requests:
+        metrics[request.metric] = _aggregate(frame[request.metric], request.aggregation)
+        metric_groups[request.metric] = _groups_for(frame, spec, request.metric, request.aggregation)
+    if not spec.metrics and len(requests) == 1:
+        # Legacy single-metric contract used the neutral "total" key.
+        return ExecutionResult(
+            metrics={"total": metrics[requests[0].metric]},
+            groups=metric_groups[requests[0].metric],
+            source_kind="rule",
+            memory_guard="none",
+        )
+    return ExecutionResult(
+        metrics=metrics,
+        groups=metric_groups.get(spec.metric, {"columns": [], "rows": []}),
+        metric_groups=metric_groups,
+        source_kind="rule",
+        memory_guard="none",
+    )
 
 
 def _numbers_close(left: float, right: float, tolerance: float) -> bool:
     return abs(left - right) <= max(tolerance, tolerance * abs(right))
 
 
-def reconcile(rule: ExecutionResult, other: ExecutionResult) -> dict[str, Any]:
-    """The LLM numbers are only credible when they match the rule baseline."""
-    problems: list[str] = []
-    total_rule = rule.metrics.get("total")
-    total_llm = other.metrics.get("total")
-    if total_rule is None or total_llm is None:
-        problems.append("total metric missing on one side")
-    elif not _numbers_close(float(total_llm), float(total_rule), TOTAL_TOLERANCE):
-        problems.append(f"total mismatch: rule={total_rule} llm={total_llm}")
-
-    rule_keys = {row[0] for row in rule.groups.get("rows", [])}
-    llm_keys = {row[0] for row in other.groups.get("rows", [])}
+def _compare_groups(
+    metric: str,
+    rule_groups: dict[str, Any],
+    llm_groups: dict[str, Any],
+    problems: list[str],
+) -> None:
+    rule_keys = {str(row[0]) for row in rule_groups.get("rows", [])}
+    llm_keys = {str(row[0]) for row in llm_groups.get("rows", [])}
     if rule_keys != llm_keys:
         missing = sorted(rule_keys - llm_keys)
         extra = sorted(llm_keys - rule_keys)
-        problems.append(f"group keys mismatch: missing={missing[:5]} extra={extra[:5]}")
-
-    rule_values = {row[0]: row[1] for row in rule.groups.get("rows", [])}
-    llm_values = {row[0]: row[1] for row in other.groups.get("rows", [])}
+        problems.append(f"{metric}: group keys mismatch: missing={missing[:5]} extra={extra[:5]}")
+    rule_values = {str(row[0]): row[1] for row in rule_groups.get("rows", [])}
+    llm_values = {str(row[0]): row[1] for row in llm_groups.get("rows", [])}
     for key in sorted(rule_keys & llm_keys):
-        if not _numbers_close(float(llm_values[key]), float(rule_values[key]), RATIO_TOLERANCE):
-            problems.append(f"group value mismatch at {key!r}: rule={rule_values[key]} llm={llm_values[key]}")
+        try:
+            left = float(llm_values[key])
+            right = float(rule_values[key])
+        except (TypeError, ValueError):
+            problems.append(f"{metric}: non-numeric group value at {key!r}")
+            continue
+        if not (math.isfinite(left) and math.isfinite(right)):
+            problems.append(f"{metric}: non-finite group value at {key!r}")
+            continue
+        if not _numbers_close(left, right, RATIO_TOLERANCE):
+            problems.append(
+                f"{metric}: group value mismatch at {key!r}: rule={rule_values[key]} llm={llm_values[key]}"
+            )
 
+
+def _metric_groups(result: ExecutionResult, metric: str, multi: bool) -> dict[str, Any]:
+    if result.metric_groups:
+        return result.metric_groups.get(metric, {"columns": [], "rows": []})
+    return result.groups if not multi else {"columns": [], "rows": []}
+
+
+def reconcile(rule: ExecutionResult, other: ExecutionResult) -> dict[str, Any]:
+    """All adopted metric totals and per-metric groups must match the rule baseline."""
+    problems: list[str] = []
+    legacy = (
+        not rule.metric_groups
+        and not other.metric_groups
+        and set(rule.metrics) == {"total"}
+        and set(other.metrics) == {"total"}
+    )
+    if legacy:
+        metrics = ["total"]
+    else:
+        metrics = sorted(set(rule.metrics) | set(other.metrics))
+    detail: dict[str, dict[str, Any]] = {}
+    for metric in metrics:
+        rule_total = rule.metrics.get(metric)
+        llm_total = other.metrics.get(metric)
+        entry = {"rule": rule_total, "llm": llm_total, "ok": True}
+        if rule_total is None or llm_total is None:
+            problems.append(f"{metric}: total missing on one side")
+            entry["ok"] = False
+        else:
+            try:
+                left = float(llm_total)
+                right = float(rule_total)
+            except (TypeError, ValueError):
+                problems.append(f"{metric}: total is not numeric")
+                entry["ok"] = False
+            else:
+                if not (math.isfinite(left) and math.isfinite(right)):
+                    problems.append(f"{metric}: total is not finite")
+                    entry["ok"] = False
+                elif not _numbers_close(left, right, TOTAL_TOLERANCE):
+                    problems.append(f"{metric}: total mismatch: rule={rule_total} llm={llm_total}")
+                    entry["ok"] = False
+                if entry["ok"]:
+                    _compare_groups(
+                        metric,
+                        _metric_groups(rule, metric, not legacy),
+                        _metric_groups(other, metric, not legacy),
+                        problems,
+                    )
+        detail[metric] = entry
+
+    accepted = not problems
+    primary = "total" if legacy else (metrics[0] if metrics else None)
     return {
         "schema_version": EXECUTION_VERSION,
-        "accepted": not problems,
+        "accepted": accepted,
         "problems": problems,
-        "total_rule": total_rule,
-        "total_llm": total_llm,
-        "group_keys_rule": len(rule_keys),
-        "group_keys_llm": len(llm_keys),
+        "total_rule": rule.metrics.get(primary) if primary else None,
+        "total_llm": other.metrics.get(primary) if primary else None,
+        "metrics": detail,
+        "metric_count": len(metrics),
+        "group_keys_rule": len({row[0] for row in _metric_groups(rule, primary, not legacy).get("rows", [])})
+        if primary
+        else 0,
+        "group_keys_llm": len({row[0] for row in _metric_groups(other, primary, not legacy).get("rows", [])})
+        if primary
+        else 0,
     }
 
 
@@ -150,7 +264,7 @@ def save_execution_artifacts(
             {
                 "schema_version": EXECUTION_VERSION,
                 "generated_at": generated_at,
-                "spec": spec.__dict__,
+                "spec": spec.to_dict(),
                 "result": rule.to_dict(),
             },
         ),
@@ -170,7 +284,7 @@ def save_execution_artifacts(
             {
                 "schema_version": EXECUTION_VERSION,
                 "generated_at": generated_at,
-                "spec": spec.__dict__,
+                "spec": spec.to_dict(),
                 "result": result.to_dict(),
             },
         ),

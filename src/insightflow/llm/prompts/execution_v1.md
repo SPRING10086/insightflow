@@ -4,8 +4,8 @@
 
 ## 输入
 
-- `spec`：目标指标（metric 列名）、目标维度（dimension 列名，可为空）、分组上限，
-  以及 `aggregation`（`SUM` 求和 / `AVG` 均值）；
+- `spec`：`metrics`（要计算的全部指标列与各自 `aggregation`：`SUM` 求和 / `AVG` 均值）、
+  `metric`（主指标）、`dimension`（主维度，可为空）、`group_limit`；
 - `fields`：字段语义（name/role/unit）；
 - `samples`：前 10 行脱敏样本。
 
@@ -13,7 +13,7 @@
 
 ```json
 {
-  "code": "result = {\"metrics\": {\"total\": float(df[\"销售额\"].sum())}, \"groups\": {\"columns\": [], \"rows\": []}}",
+  "code": "metrics = {}\nmetric_groups = {}\nfor _m in [\"销售额\", \"订单量\"]:\n    metrics[_m] = float(df[_m].sum())\n    metric_groups[_m] = {\"columns\": [], \"rows\": []}\nresult = {\"metrics\": metrics, \"metric_groups\": metric_groups, \"groups\": {\"columns\": [], \"rows\": []}}",
   "notes": "可选说明"
 }
 ```
@@ -23,26 +23,28 @@
 1. 只做 DataFrame 变换与纯计算，**禁止 import / open / exec / eval / 文件 / 网络 / 子进程**；
 2. 只能使用 `df`、`pd`、`np` 与少量内建函数（len/min/max/sum/round/abs/int/float/str/sorted/bool）；
 3. 只允许白名单方法（groupby/agg/sum/mean/count/size/nunique/sort_values/head/tail/rename/reset_index/merge/astype/fillna/dropna/isin/between/clip/idxmax/nlargest/value_counts/pivot_table/crosstab/loc/iloc 等）；
-   **不要用 `assign` 造新列**：直接对 metric 列聚合，例如 `df.groupby(维度)[metric].sum()`。
-4. **禁止任何以 `_` 开头的名字或属性**（包括 `__class__` 之类）；
+   **不要用 `assign` 造新列**：直接对指标列聚合，例如 `df.groupby(维度)[指标].sum()`。
+4. **禁止任何以 `_` 开头的名字或属性**（包括 `__class__` 之类）；循环变量、临时变量也必须不以 `_` 开头；
 5. 必须给变量 `result` 赋值，结构固定：
-   - `result = {"metrics": {"total": <数字>}, "groups": {"columns": ["维度列"], "rows": [["A", <数字>], ...]}}`
-   - 无维度时 `groups = {"columns": [], "rows": []}`；
-   - 只允许 `total` 这一个指标名；
-   - 分组不超过 50 行，取 `sort_values(ascending=False).head(50)`；
+   - `result["metrics"]`：**spec.metrics 里的每个指标名各一个数字**，键名必须与 spec 完全一致，不得多写/漏写；
+   - `result["metric_groups"]`：每个指标一个 `{"columns": [...], "rows": [["A", <数字>], ...]}`；
+     无维度时每个指标都是 `{"columns": [], "rows": []}`；每组不超过 50 行，
+     取 `sort_values(ascending=False).head(50)`；
+   - `result["groups"]`：**主指标**（spec.metric）的分组，内容与 `metric_groups[主指标]` 相同，供旧接口读取；
+   - 每个指标按自己的 `aggregation` 计算（`SUM`→`.sum()`，`AVG`→`.mean()`），分组同理；
 6. 不要打印、不要写文件、不要返回其他键。
 
 ## 语义要求
 
-- `total` 按 `spec.aggregation` 计算：`SUM` 用 `float(df["列"].sum())`；`AVG` 用
-  `float(df["列"].mean())`（百分比/比率字段通常是 AVG）。分组同理（`.sum()` 或 `.mean()`）。
-- 有维度时按维度分组求和，组名转成字符串；
+- 所有指标都必须计算，不得只算主指标；
+- 有维度时按维度分组，组名转成字符串；
 - 不要过滤行，除非 spec 明确要求；不要改口径；
-- 代码尽量短，10 行以内。
+- 代码尽量短（指标多时可用循环），不要用下划线开头的变量名。
 
 ## 输出前自检
 
 - [ ] 只有 `code` 与 `notes` 两个键
 - [ ] 没有任何 import/open/exec/eval/下划线名字
-- [ ] `result` 结构与键名完全符合
+- [ ] `metrics` 键集合与 spec.metrics 完全一致
+- [ ] `metric_groups` 每个指标都有，`groups` 等于主指标分组
 - [ ] 是合法 JSON（字符串内不要有未转义引号或换行）

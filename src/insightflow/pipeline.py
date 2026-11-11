@@ -53,6 +53,7 @@ from .execution import (
     CodeArtifact,
     ExecutionResult,
     ExecutionSpec,
+    MetricRequest,
     reconcile,
     rule_execute,
     save_execution_artifacts,
@@ -530,8 +531,8 @@ def execute(
                 f"成本 {result_llm.cost_cny:.4f} 元。",
             )
 
-        # 7.5.1) Stage 6b-2 execute adoption (transitional "b"): only the
-        # reconciled primary total is adopted; every other metric stays rule.
+        # 7.5.1) Stage 6d-1 execute adoption (a): reconcile covers every executed
+        # metric; only when all metrics pass do we adopt them all (all-or-nothing).
         execute_provenance: dict[str, Any] | None = None
         execute_gate_reason = ""
         if (
@@ -549,24 +550,32 @@ def execute(
                 execute_gate_reason = "memory_guard"
             elif llm_result.error:
                 execute_gate_reason = "execution_error"
-            elif getattr(plan, "primary_metric", None) and diff.get("total_llm") is not None:
-                primary = plan.primary_metric
-                field = analysis_fields.get(primary)
-                llm_total = float(diff["total_llm"])
-                for kpi in result.kpis:
-                    if kpi.key == primary:
-                        kpi.value = llm_total
-                        # Reuse the analysis formatter so money/int/percent/number
-                        # all match what the rule path would display.
-                        kpi.formatted = _format_value(llm_total, _value_type(primary, analysis_fields))
-                        break
-                adopted_label = field.label if field is not None else primary
-                execute_provenance = {
-                    "adopted_metrics": [adopted_label],
-                    "rule_metrics": [kpi.label for kpi in result.kpis if kpi.key != primary],
-                }
+            elif not diff.get("metrics"):
+                execute_gate_reason = "no_metrics"
             else:
-                execute_gate_reason = "no_primary_metric"
+                adopted_labels: list[str] = []
+                for metric, entry in diff["metrics"].items():
+                    if entry.get("llm") is None:
+                        continue
+                    llm_total = float(entry["llm"])
+                    for kpi in result.kpis:
+                        if kpi.key == metric:
+                            kpi.value = llm_total
+                            # Reuse the analysis formatter so money/int/percent/number
+                            # all match what the rule path would display.
+                            kpi.formatted = _format_value(llm_total, _value_type(metric, analysis_fields))
+                            adopted_labels.append(kpi.label)
+                            break
+                if not adopted_labels:
+                    execute_gate_reason = "no_primary_metric"
+                else:
+                    reconciled_keys = set(diff["metrics"])
+                    execute_provenance = {
+                        "adopted_metrics": adopted_labels,
+                        "rule_metrics": [
+                            kpi.label for kpi in result.kpis if kpi.key not in reconciled_keys
+                        ],
+                    }
 
         # 7.6) Optional LLM narrative (escaped text only; numbers locally rendered).
         narrative_bundle: dict[str, Any] | None = None
@@ -959,13 +968,31 @@ def _build_execution_bundle(
     dimension = fields.get(getattr(plan, "primary_dimension", "") or "")
     # The cleaned frame is keyed by canonical names (revenue, orders...), so the
     # execution spec and the generated code must use those, not the raw headers.
+    # All plan metrics that can enter a KPI are executed and reconciled; the
+    # primary metric stays first for backward-compatible fields.
+    metric_names: list[str] = []
+    primary = getattr(plan, "primary_metric", "") or ""
+    if primary and primary in fields and getattr(fields[primary], "kind", "") == "metric":
+        metric_names.append(primary)
+    for name in getattr(plan, "metrics", []) or []:
+        if name in fields and getattr(fields[name], "kind", "") == "metric" and name not in metric_names:
+            metric_names.append(name)
+    requests = [
+        MetricRequest(
+            metric=name,
+            label=fields[name].label,
+            aggregation=str(getattr(fields[name], "aggregation", "SUM") or "SUM").upper(),
+        )
+        for name in metric_names
+    ]
     spec = ExecutionSpec(
         table="dataset",
-        metric=getattr(plan, "primary_metric", "") or "",
+        metric=primary,
         metric_label=metric_field.label,
         dimension=(getattr(plan, "primary_dimension", "") or "") if dimension else "",
         dimension_label=dimension.label if dimension else "",
         aggregation=str(getattr(metric_field, "aggregation", "SUM") or "SUM").upper(),
+        metrics=requests,
     )
     allowed = [str(column) for column in frame.columns if not str(column).startswith("__")]
     rule = rule_execute(spec, frame)
@@ -1018,6 +1045,8 @@ def _persist_execution(day_dir: Path, bundle: dict[str, Any], record: RunRecord)
         "problems": list(diff["problems"]),
         "total_rule": diff["total_rule"],
         "total_llm": diff["total_llm"],
+        "metric_count": diff.get("metric_count", 1),
+        "metrics": diff.get("metrics", {}),
         "cost_cny": round(result.cost_cny, 6),
         "latency_ms": result.latency_ms,
         "files": [path.name for path in written],

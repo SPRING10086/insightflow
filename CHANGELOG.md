@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.18-dev — 6d 任务 1：execute 全指标对账 (a)
+
+- `ExecutionSpec` 支持多指标（`MetricRequest`），rule baseline 逐指标计算 total/分组（SUM/AVG）。
+- 沙箱输出支持可选 `metric_groups`；`reconcile` 逐指标校验 total、分组键、分组值，NaN/缺指标一律拒绝。
+- 采信改为 all-or-nothing：全部指标通过才统一替换 KPI，任一失败整次回退并记 `reconcile_mismatch`；
+  `metadata.execution` 增加 `metric_count` 与逐指标明细。
+- 新增 11 项测试与独立复算脚本 `scripts/execution_reconcile_check.py`（7 个篡改场景全拒）。
+- 全量 341 测试 OK。
+
 ## 1.0.17-dev — 6c 复核 P1：沙箱默认内存上调
 
 - 沙箱默认 `memory_mb` 512 → **1024**（pandas 基线 commit 实测 524–530MB，512 处于临界）；
