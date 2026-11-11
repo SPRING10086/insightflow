@@ -302,6 +302,38 @@ validate_code → 子进程沙箱 → 重试/成本）与 pipeline（reconcile �
 1. executor 对 `_generate` 抛出的 `ContractError` 未进入重试循环 → 已纳入 2 次重试与 `retry_blocked` 判定；
 2. `force_rules` 仅影响采信决议，CLI/GUI 仍会构建 provider 并出站 → 现在直接跳过构建。
 
+## 6d 任务 3：四类回退根因修复 + 灰度重跑（2026-11-11）
+
+### 根因修复
+
+| 根因 | 确定性修复 |
+|---|---|
+| 单位误判（万/万元） | 新增 `canonical_unit` 同义词归一（万/万元、元/人民币元、%/百分比等），规则与 LLM 都走同一函数；列名中的 `(万元)` 作为确定性单位提示，仅当 LLM 与提示一致时采用提示单位；其余不一致仍 `unit_conflict` |
+| 计划引用被丢弃列 | plan 提供者只收到“实际进入分析”的字段（按 `FieldSpec.original` 过滤），被规则丢弃的高基数列不再出现在提示词/可引用集合；适配器仍对越界引用 fail-closed |
+| 叙事 facts/占位符 | 新增 `normalize_fact_value`（全角数字/空白确定性规范化）后再过 `SAFE_VALUE_RE`；含字母值仍拒绝；补充 `total.rows` 合法占位符映射；未知占位符仍 `UnknownReferenceError` |
+| 真实 JSON 稳定性 | `loads_llm_json` 先严格解析，再对“外层完整对象”做一次提取重试（截断仍失败）；输出 token 上限 2000→4000，降低长 Schema 截断；契约失败仍走 2 次重试/回退 |
+
+同时修正 execution prompt 的键名歧义：`metrics` 与 `metric_groups` 必须逐字使用 `spec.metrics`，分组用 `sorted(g.items())` 生成可序列化行（无循环、无下划线变量，prompt 一致性测试继续通过）。
+
+### 真实灰度（4 类 × 3 次，四能力 gated，真实 LLM）
+
+| 能力 | 采信/尝试 | 回退原因 |
+|---|---|---|
+| semantic | **10/12** | `source_fallback` ×2（真实 2018 样本 JSON 偶发不闭合） |
+| plan | **12/12** | — |
+| execute | **12/12** | — |
+| narrative | **12/12** | — |
+
+```text
+runs=12 (≥10) · samples=4 (≥3) · cost=0.2217 元
+overall_fallback_rate = 2/48 = 4.17%  ≤ 5%
+reconcile_pass_rate = 100%
+readiness.ready = true, blockers = []
+```
+
+证据：[docs/llm-stage6-gray.json](llm-stage6-gray.json)（12 份 run_record + 聚合）。
+
+
 
 
 

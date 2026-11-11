@@ -153,10 +153,27 @@ def check_no_business_numbers(node: Any) -> None:
     _check_no_business_numbers(node)
 
 
+def loads_llm_json(text: str) -> Any:
+    """Strict parse first, then retry on the outermost object.
+
+    Models sometimes wrap a complete object in prose or fences; extracting the
+    first ``{`` .. last ``}`` recovers it.  Truncated output has no closing
+    brace and still fails, so no half-parsed data can pass.
+    """
+    try:
+        return json.loads(text, strict=False)
+    except (TypeError, json.JSONDecodeError):
+        start = text.find("{") if isinstance(text, str) else -1
+        end = text.rfind("}") if isinstance(text, str) else -1
+        if start >= 0 and end > start:
+            return json.loads(text[start : end + 1], strict=False)
+        raise
+
+
 def parse_result(text: str, usage: dict[str, int] | None = None) -> LLMResult:
     """Parse and validate the model's JSON answer; raise ``ContractError`` otherwise."""
     try:
-        data = json.loads(text, strict=False)
+        data = loads_llm_json(text)
     except (TypeError, json.JSONDecodeError) as exc:
         raise ContractError(f"输出不是合法 JSON：{exc}") from exc
     _require(isinstance(data, dict), "输出顶层必须是对象")

@@ -22,6 +22,18 @@ MAX_SEGMENTS = 20
 PLACEHOLDER_RE = re.compile(r"\[\[([a-z][a-z0-9_]*)\.([A-Za-z0-9_\u4e00-\u9fa5-]+(?:\.[A-Za-z0-9_\u4e00-\u9fa5-]+)?)\]\]")
 #: Replacement values may only contain digits/units/common punctuation, never letters or markup.
 SAFE_VALUE_RE = re.compile(r"^[-+0-9.,%％—–\s\u4e00-\u9fa5¥/（）()]+$")
+FULLWIDTH_DIGITS = str.maketrans("０１２３４５６７８９", "0123456789")
+
+
+def normalize_fact_value(value: Any) -> str:
+    """Deterministic formatting before the safety check (never loosens it)."""
+    text = str(value).strip().translate(FULLWIDTH_DIGITS)
+    return re.sub(r"\s+", " ", text)
+
+
+def is_safe_fact_value(value: Any) -> bool:
+    """True only when the normalised value is renderable without escaping."""
+    return bool(SAFE_VALUE_RE.match(normalize_fact_value(value)))
 UNSAFE_MARKUP_RE = re.compile(
     r"[<>`]|javascript\s*:|data\s*:|vbscript\s*:|on[a-z]+\s*=|&#(?:x[0-9a-f]+|\d+);|&(?:lt|gt|amp|quot|apos);",
     re.IGNORECASE,
@@ -94,6 +106,7 @@ def build_facts(result: Any, plan: Any, cleaning: Any, fields: dict[str, Any]) -
     rows_out = int(getattr(cleaning, "rows_out", 0) or 0)
     facts["meta.rows"] = _fmt_number(rows_out)
     facts["total.records"] = _fmt_number(rows_out)
+    facts["total.rows"] = _fmt_number(rows_out)
 
     for kpi in getattr(result, "kpis", []) or []:
         key = str(getattr(kpi, "key", "") or "")
@@ -193,7 +206,7 @@ def render_narrative(draft: NarrativeDraft, facts: dict[str, str]) -> dict[str, 
         for match in PLACEHOLDER_RE.finditer(text):
             parts.append(_escape(text[position : match.start()]))
             key = f"{match.group(1)}.{match.group(2)}"
-            value = str(facts[key])
+            value = normalize_fact_value(facts[key])
             if not SAFE_VALUE_RE.match(value):
                 raise UnsafeMarkupError(f"replacement value is not safe: {value[:40]!r}")
             mapping[match.group(0)] = value

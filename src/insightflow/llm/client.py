@@ -72,7 +72,7 @@ class LLMConfig:
     base_url: str = DEFAULT_BASE_URL
     timeout_seconds: float = 60.0
     max_retries: int = 2
-    max_output_tokens: int = 2000
+    max_output_tokens: int = 4000
     temperature: float = 0.0
     cost_warn_cny: float = 4.5
     cost_stop_cny: float = 5.0
@@ -127,7 +127,7 @@ class LLMConfig:
             base_url=get("INSIGHTFLOW_LLM_BASE_URL", DEFAULT_BASE_URL) or DEFAULT_BASE_URL,
             timeout_seconds=float(get("INSIGHTFLOW_LLM_TIMEOUT", "60") or 60),
             max_retries=int(get("INSIGHTFLOW_LLM_RETRIES", "2") or 2),
-            max_output_tokens=int(get("INSIGHTFLOW_LLM_MAX_TOKENS", "2000") or 2000),
+            max_output_tokens=int(get("INSIGHTFLOW_LLM_MAX_TOKENS", "4000") or 4000),
         )
 
 

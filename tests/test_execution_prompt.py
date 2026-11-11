@@ -40,19 +40,25 @@ class ExecutionPromptTests(unittest.TestCase):
 
     def test_example_code_passes_whitelist(self):
         code = _example_code()
-        validate_code(code, {"销售额", "订单量"})  # must not raise
+        validate_code(code, {"revenue", "orders", "region"})  # must not raise
 
     def test_example_code_runs_in_sandbox(self):
-        frame = pd.DataFrame({"销售额": [100.0, 200.0, 300.0], "订单量": [1.0, 2.0, 3.0]})
+        frame = pd.DataFrame(
+            {
+                "region": ["A", "A", "B"],
+                "revenue": [100.0, 200.0, 300.0],
+                "orders": [1.0, 2.0, 3.0],
+            }
+        )
         data = run_sandbox(
             _example_code(),
             frame,
-            allowed_columns={"销售额", "订单量"},
+            allowed_columns={"revenue", "orders", "region"},
             timeout_seconds=20,
         )
-        self.assertAlmostEqual(data["metrics"]["销售额"], 600.0)
-        self.assertAlmostEqual(data["metrics"]["订单量"], 6.0)
-        self.assertEqual(set(data["metric_groups"]), {"销售额", "订单量"})
+        self.assertAlmostEqual(data["metrics"]["revenue"], 600.0)
+        self.assertAlmostEqual(data["metrics"]["orders"], 6.0)
+        self.assertEqual(set(data["metric_groups"]), {"revenue", "orders"})
 
     def test_for_loop_is_still_rejected(self):
         loop_code = (

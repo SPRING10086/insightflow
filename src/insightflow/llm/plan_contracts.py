@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from ..planning import PlanChart, PlanDraft, PlanValidationError, validate_plan_closure
-from .contracts import ContractError, check_no_business_numbers
+from .contracts import ContractError, check_no_business_numbers, loads_llm_json
 
 PLAN_PROMPT_VERSION = "plan_v1"
 
@@ -31,7 +31,7 @@ def _check_empty_slots(option: dict[str, Any], chart_id: str) -> None:
 def parse_plan(text: str, roles: dict[str, str]) -> PlanDraft:
     """Parse a model plan and enforce structure + field-closure against the schema."""
     try:
-        data = json.loads(text, strict=False)
+        data = loads_llm_json(text)
     except (TypeError, json.JSONDecodeError) as exc:
         raise ContractError(f"计划不是合法 JSON：{exc}") from exc
     _require(isinstance(data, dict), "计划顶层必须是对象")

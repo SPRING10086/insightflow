@@ -15,7 +15,7 @@ from typing import Any
 from ..execution import CodeArtifact, ExecutionResult, ExecutionSpec
 from ..semantic import FieldSemantics
 from .client import CostLimitExceeded, DeepSeekClient, LLMConfig
-from .contracts import ContractError, check_no_business_numbers
+from .contracts import ContractError, check_no_business_numbers, loads_llm_json
 from .payloads import mask_value
 from .sandbox import SandboxError, run_sandbox, validate_code
 from .stats import LLMStats
@@ -83,7 +83,7 @@ class LLMExecutionProvider:
             self.warn_prompt_tokens,
         )
         try:
-            data = json.loads(content, strict=False)
+            data = loads_llm_json(content)
             if not isinstance(data, dict) or not isinstance(data.get("code"), str) or not data["code"].strip():
                 raise ContractError("输出必须包含非空 code 字符串")
             check_no_business_numbers({key: value for key, value in data.items() if key != "code"})

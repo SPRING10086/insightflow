@@ -10,7 +10,7 @@ from typing import Any
 
 from ..narrative import NarrativeDraft
 from .client import CostLimitExceeded, DeepSeekClient, LLMConfig
-from .contracts import ContractError
+from .contracts import ContractError, loads_llm_json
 from .payloads import mask_value
 from .stats import LLMStats
 
@@ -46,7 +46,7 @@ class LLMNarrativeProvider:
     @staticmethod
     def _parse(content: str) -> NarrativeDraft:
         try:
-            data = json.loads(content, strict=False)
+            data = loads_llm_json(content)
         except json.JSONDecodeError as exc:
             raise ContractError(f"叙事不是合法 JSON：{exc}") from exc
         if not isinstance(data, dict):

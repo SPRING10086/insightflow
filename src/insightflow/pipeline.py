@@ -41,6 +41,7 @@ from .narrative import (
     NarrativeDraft,
     NarrativeError,
     build_facts,
+    is_safe_fact_value,
     render_narrative,
     save_narrative_artifacts,
     validate_narrative,
@@ -899,10 +900,15 @@ def _build_plan_bundle(
             if item.name not in seen:
                 seen[item.name] = item
                 ordered.append(item)
+    # Only fields that actually enter analysis may be referenced by the plan;
+    # rule-dropped high-cardinality columns are hidden from the prompt entirely.
+    allowed_names = {str(getattr(spec, "original", key)) for key, spec in fields.items()}
+    ordered = [item for item in ordered if str(getattr(item, "name", "")) in allowed_names]
     anomalies = [
         {"table": table.table, **item}
         for table in source.tables
         for item in (getattr(table, "anomalies", None) or [])
+        if str(item.get("field") or item.get("column") or "") in allowed_names
     ]
 
     try:
@@ -1064,6 +1070,9 @@ def _build_narrative_bundle(
     logger: logging.Logger,
 ) -> dict[str, Any] | None:
     facts = build_facts(result, plan, cleaning, fields)
+    # Only deterministic, render-safe values are offered as placeholders; text
+    # such as the dataset kind stays out and an invented reference still fails.
+    facts = {key: value for key, value in facts.items() if is_safe_fact_value(value)}
     chart_ids = [str(chart.chart_id) for chart in getattr(result, "charts", [])]
     labels = [str(getattr(spec, "label", key)) for key, spec in fields.items()]
     samples = [
