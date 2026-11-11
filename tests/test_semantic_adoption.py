@@ -107,6 +107,74 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result.fields["region"].kind, "metric")
         self.assertTrue(result.changed)
 
+    def _multisheet_setup(self, explain_role):
+        explain_frame = pd.DataFrame({"目标日期": ["2026-11-07"]})
+        detail_frame = pd.DataFrame({"订单日期": ["2026-11-07"], "销售额": [100.0]})
+        explain_tbl = SimpleNamespace(
+            source=SimpleNamespace(relative_path="sales_detail.xlsx"),
+            sheet_label="说明",
+            frame=explain_frame,
+        )
+        detail_tbl = SimpleNamespace(
+            source=SimpleNamespace(relative_path="sales_detail.xlsx"),
+            sheet_label="销售明细",
+            frame=detail_frame,
+        )
+        explain_schema = SimpleNamespace(
+            fields={
+                "date": FieldSpec(
+                    original="目标日期", canonical="date", label="目标日期", kind="date"
+                )
+            }
+        )
+        detail_schema = SimpleNamespace(
+            fields={
+                "date": FieldSpec(
+                    original="订单日期", canonical="date", label="订单日期", kind="date"
+                ),
+                "revenue": FieldSpec(
+                    original="销售额", canonical="revenue", label="销售额",
+                    kind="metric", unit="元",
+                ),
+            }
+        )
+        explain_artifact = SimpleNamespace(
+            table="sales_detail.xlsx",
+            sheet="说明",
+            fields=[FieldSemantics(name="目标日期", role=explain_role)],
+        )
+        detail_artifact = SimpleNamespace(
+            table="sales_detail.xlsx",
+            sheet="销售明细",
+            fields=[
+                FieldSemantics(name="订单日期", role="date"),
+                FieldSemantics(name="销售额", role="metric", unit="元"),
+            ],
+        )
+        artifact = SimpleNamespace(tables=[explain_artifact, detail_artifact])
+        return (explain_tbl, explain_schema), (detail_tbl, detail_schema), artifact
+
+    def test_multisheet_composite_key_no_overwrite(self):
+        explain, detail, artifact = self._multisheet_setup("date")
+        result = adopt_semantic_fields(artifact, [explain, detail], {})
+        self.assertIn("revenue", result.fields)
+        self.assertEqual(result.fields["revenue"].unit, "元")
+
+    def test_inactive_explanatory_sheet_skipped(self):
+        explain, detail, artifact = self._multisheet_setup("text")
+        active = {("sales_detail.xlsx", "销售明细")}
+        result = adopt_semantic_fields(
+            artifact, [explain, detail], {}, active_table_keys=active
+        )
+        self.assertIn("revenue", result.fields)
+        self.assertEqual(result.tables, ["sales_detail.xlsx"])
+
+    def test_inactive_sheet_without_skip_conflicts(self):
+        explain, detail, artifact = self._multisheet_setup("text")
+        with self.assertRaises(SemanticAdoptionError) as ctx:
+            adopt_semantic_fields(artifact, [explain, detail], {})
+        self.assertEqual(ctx.exception.reason, "role_conflict")
+
 
 class FakeSemantic:
     name = "fake"

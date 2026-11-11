@@ -76,16 +76,31 @@ def adopt_semantic_fields(
     artifact: Any,
     table_schemas: list[tuple[Any, Any]],
     rule_fields: dict[str, Any],
+    active_table_keys: set[tuple[str, str]] | None = None,
 ) -> SemanticAdoptionResult:
-    """Return adopted FieldSpecs or raise :class:`SemanticAdoptionError`."""
-    llm_tables = {str(table.table): table for table in getattr(artifact, "tables", []) or []}
+    """Return adopted FieldSpecs or raise :class:`SemanticAdoptionError`.
+
+    Tables are matched on the ``(file, sheet)`` composite key so a workbook with
+    several sheets never collapses onto a single entry.  When ``active_table_keys``
+    is supplied, only tables carrying target/baseline rows are gated and
+    explanatory empty sheets are skipped; ``None`` evaluates every loaded table.
+    """
+    llm_tables = {
+        (str(table.table), str(getattr(table, "sheet", "") or "")): table
+        for table in getattr(artifact, "tables", []) or []
+    }
     adopted: dict[str, Any] = {}
     changed: list[str] = []
     used_tables: list[str] = []
 
     for table, schema in table_schemas:
         name = str(table.source.relative_path)
-        llm_table = llm_tables.get(name)
+        sheet_label = str(getattr(table, "sheet_label", "") or "")
+        table_key = (name, sheet_label)
+        if active_table_keys is not None and table_key not in active_table_keys:
+            # Explanatory/empty sheet that does not participate in analysis.
+            continue
+        llm_table = llm_tables.get(table_key)
         if llm_table is None:
             raise SemanticAdoptionError("missing_table", f"LLM 语义缺少表 {name}")
         used_tables.append(name)

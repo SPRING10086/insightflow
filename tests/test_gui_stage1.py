@@ -144,7 +144,8 @@ class RunTests(unittest.TestCase):
         self.assertEqual(summary["report_path"], "")
         ok, reason = services.result_availability(summary)
         self.assertFalse(ok)
-        self.assertIn("没有目标日期", reason)
+        self.assertIn("无数据", reason)
+        self.assertIn("大模型不会触发", reason)
         self.assertIn("无数据", services.result_caption(summary))
 
 

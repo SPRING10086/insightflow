@@ -10,7 +10,6 @@ files, and the run history.  Layering rule (enforced by review): this module and
 from __future__ import annotations
 
 import dataclasses
-import os
 import time
 import tkinter as tk
 from datetime import date, datetime, timedelta
@@ -994,7 +993,7 @@ class InsightFlowApp(tk.Tk):
             messagebox.showerror(f"找不到{label}", f"路径不存在：{path or '（空）'}")
             return
         try:
-            os.startfile(path)  # type: ignore[attr-defined]
+            services.open_path(path)
         except OSError as exc:
             messagebox.showerror(f"无法打开{label}", f"{path}\n{services.friendly_error(exc)}")
 
@@ -1173,7 +1172,7 @@ class InsightFlowApp(tk.Tk):
         try:
             if not target.exists():
                 target.mkdir(parents=True, exist_ok=True)
-            os.startfile(target)  # type: ignore[attr-defined]
+            services.open_path(target)
         except OSError as exc:
             messagebox.showerror("无法打开数据源目录", f"{target}\n{services.friendly_error(exc)}")
 
@@ -1205,8 +1204,8 @@ class InsightFlowApp(tk.Tk):
 
     def _open_logs(self) -> None:
         try:
-            os.startfile(self.settings.log_dir)  # type: ignore[attr-defined]
-        except (AttributeError, OSError) as exc:
+            services.open_path(self.settings.log_dir)
+        except OSError as exc:
             messagebox.showerror("无法打开日志目录", f"{self.settings.log_dir}\n{services.friendly_error(exc)}")
 
     def _on_close(self) -> None:

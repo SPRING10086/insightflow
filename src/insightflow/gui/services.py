@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import shutil
+import subprocess
 import sys
 import time
+import webbrowser
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -57,7 +60,7 @@ STATUS_LABELS: dict[str, str] = {
 }
 
 RESULT_UNAVAILABLE: dict[str, str] = {
-    "no_data": "本次没有目标日期的数据，未生成报告与清洗数据。",
+    "no_data": "该日期无数据，大模型不会触发；请用「预览」查看有数据的日期后更换再运行。",
     "failed": "本次运行失败，未生成结果；请查看日志后重试。",
     "skipped": "本次被跳过（并发锁或数据未变化），没有新结果。",
 }
@@ -101,6 +104,175 @@ def friendly_error(exc: BaseException) -> str:
     if text:
         return f"{text}。如果重复出现，请点「打开日志目录」，把最新的日志发给技术支持。"
     return "发生未知错误。请点「打开日志目录」查看最新记录，再联系技术支持。"
+
+
+#: Windows integrity-level RID for the low mandatory level (sandboxed workspace).
+_LOW_INTEGRITY_RID = 0x1000
+
+
+def _current_integrity_rid() -> int | None:
+    """Return the current process integrity-level RID on Windows, else ``None``.
+
+    Used to detect the sandboxed workspace, where the whole tree carries a
+    ``Low Mandatory Level`` label and the bundled interpreter runs at low
+    integrity. Any failure returns ``None`` so the caller falls back to the
+    standard (non-sandbox) path instead of breaking the open action.
+    """
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        advapi32.OpenProcessToken.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)
+        ]
+        advapi32.OpenProcessToken.restype = wintypes.BOOL
+        advapi32.GetTokenInformation.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        advapi32.GetTokenInformation.restype = wintypes.BOOL
+        advapi32.GetSidSubAuthorityCount.argtypes = [wintypes.LPVOID]
+        advapi32.GetSidSubAuthorityCount.restype = ctypes.POINTER(ctypes.c_ubyte)
+        advapi32.GetSidSubAuthority.argtypes = [wintypes.LPVOID, wintypes.DWORD]
+        advapi32.GetSidSubAuthority.restype = ctypes.POINTER(wintypes.DWORD)
+
+        token = wintypes.HANDLE()
+        if not advapi32.OpenProcessToken(
+            kernel32.GetCurrentProcess(), 0x0008, ctypes.byref(token)  # TOKEN_QUERY
+        ):
+            return None
+        try:
+            need = wintypes.DWORD(0)
+            advapi32.GetTokenInformation(
+                token, 25, None, 0, ctypes.byref(need)  # TokenIntegrityLevel
+            )
+            buffer = ctypes.create_string_buffer(need.value)
+            if not advapi32.GetTokenInformation(
+                token, 25, buffer, need.value, ctypes.byref(need)
+            ):
+                return None
+            sid = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
+            count = advapi32.GetSidSubAuthorityCount(sid)[0]
+            return advapi32.GetSidSubAuthority(sid, count - 1)[0]
+        finally:
+            kernel32.CloseHandle(token)
+    except (OSError, ValueError, ctypes.ArgumentError):
+        return None
+
+
+def _runtime_dir() -> Path:
+    """Return a per-app writable runtime directory.
+
+    Under the sandbox the application tree itself is low-integrity and therefore
+    writable by the low-integrity process, so the browser profile and a valid
+    TEMP can live here even though the user's normal ``AppData`` is off-limits.
+    """
+    env_home = os.environ.get("INSIGHTFLOW_HOME")
+    base = Path(env_home) if env_home else Path.cwd()
+    runtime = base / "state" / "runtime"
+    runtime.mkdir(parents=True, exist_ok=True)
+    return runtime
+
+
+def _edge_executable() -> str | None:
+    for candidate in (
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return shutil.which("msedge")
+
+
+def _open_via_edge(target: Path) -> None:
+    """Open a file or folder through a dedicated, writable Edge profile.
+
+    Files render normally; folders render Chromium's directory listing. The
+    independent profile avoids the locked default profile (Error 5), the corrected
+    TEMP points at a writable folder, and ``--no-sandbox`` is required because a
+    low-integrity parent cannot initialise Chromium's own renderer sandbox.
+    """
+    edge = _edge_executable()
+    if not edge:
+        raise OSError("未找到 Microsoft Edge，无法在受限环境中打开。")
+    runtime = _runtime_dir()
+    profile = runtime / "edge-profile"
+    scratch = runtime / "temp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    child_env = os.environ.copy()
+    child_env["TEMP"] = str(scratch)
+    child_env["TMP"] = str(scratch)
+    subprocess.Popen(
+        [
+            edge,
+            f"--user-data-dir={profile}",
+            "--no-first-run",
+            "--new-window",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-features=msEdgeWelcomeFLX",
+            target.resolve().as_uri(),
+        ],
+        close_fds=True,
+        env=child_env,
+    )
+
+
+def open_path(path: Path | str) -> None:
+    """Open a file or folder in the OS shell, with association-independent fallbacks.
+
+    Two environments are handled. On a normal machine the native shell call is
+    used first (no side effects), then the default browser for documents and an
+    explicit ``explorer``/``open``/``xdg-open`` launch. In the low-integrity
+    sandboxed workspace the native calls deny access or fail silently, so the
+    target is opened through a dedicated Edge profile (files render, folders show
+    a directory listing). Every launch uses an argument list, never a shell
+    string, so the path cannot inject commands.
+    """
+    target = Path(path)
+    if not target.exists():
+        raise FileNotFoundError(f"路径不存在：{target}")
+
+    # Sandboxed workspace: native shell calls deny or fail silently here.
+    if sys.platform == "win32" and _current_integrity_rid() == _LOW_INTEGRITY_RID:
+        _open_via_edge(target)
+        return
+
+    # 1. Native shell association — preferred, no console flash.
+    try:
+        os.startfile(str(target))  # type: ignore[attr-defined]
+        return
+    except AttributeError:
+        pass  # os.startfile is absent off Windows
+    except OSError:
+        pass  # association missing or access denied — try the fallbacks
+
+    # 2. For documents, the default browser is the correct handler (HTML etc.).
+    if target.is_file():
+        try:
+            if webbrowser.open(target.resolve().as_uri()):
+                return
+        except OSError:
+            pass
+
+    # 3. Explicit launcher that does not rely on the shell association.
+    if sys.platform == "win32":
+        argv = ["explorer.exe", str(target)]
+    elif sys.platform == "darwin":
+        argv = ["open", str(target)]
+    else:
+        argv = ["xdg-open", str(target)]
+
+    try:
+        subprocess.Popen(argv, close_fds=True)
+    except OSError as exc:
+        raise OSError(f"无法打开：{target}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -656,10 +828,35 @@ def import_files(settings: Settings, paths: list[str | Path]) -> dict[str, Any]:
     return {"imported": imported, "skipped": skipped, "source_dir": str(root)}
 
 
+def available_dates(settings: Settings) -> list[str]:
+    """Deterministic, read-only list of ISO dates that carry at least one row."""
+    import pandas as pd
+
+    from ..discovery import discover_files
+    from ..readers import read_sources
+
+    files = discover_files(settings, settings.source_dir)
+    if not files:
+        return []
+    read_result = read_sources(files, settings, settings.source_dir)
+    days: set[date] = set()
+    for table in read_result.tables:
+        frame = table.frame
+        for column in frame.columns:
+            if str(column).startswith("__"):
+                continue
+            parsed = pd.to_datetime(frame[column], errors="coerce")
+            if len(parsed) and parsed.notna().mean() >= 0.8:
+                for value in parsed.dropna().dt.date:
+                    days.add(value)
+                break
+    return [day.isoformat() for day in sorted(days)]
+
+
 def preview_source(settings: Settings, target: date) -> dict[str, Any]:
     """Read-only preview for FR-2.6, returned as plain data."""
     payload = core_preview(settings, target)
-    return {
+    result = {
         "target_date": payload["target_date"],
         "baseline_date": payload["baseline_date"],
         "source_dir": payload["source_dir"],
@@ -670,7 +867,11 @@ def preview_source(settings: Settings, target: date) -> dict[str, Any]:
         "warnings": list(payload.warnings),
         "has_target_rows": payload.has_target_rows,
         "empty_source": payload.empty_source,
+        "available_dates": [],
     }
+    if not payload.has_target_rows and not payload.empty_source:
+        result["available_dates"] = available_dates(settings)
+    return result
 
 
 def preview_caption(preview: dict[str, Any] | None) -> str:
@@ -680,10 +881,12 @@ def preview_caption(preview: dict[str, Any] | None) -> str:
     if preview["empty_source"]:
         return "数据源为空：没有可读取的 Excel / CSV 文件。"
     if not preview["has_target_rows"]:
+        options = preview.get("available_dates") or []
+        recommend = f"（例如 {options[-1]}）" if options else ""
         return (
-            f"{preview['target_date']} 没有命中任何数据行"
-            f"（扫描 {preview['files_scanned']}、读取 {preview['files_read']} 个文件）"
-            f"；此时运行会以「无数据」结束，不会生成报告。"
+            f"该日期无数据，大模型不会触发，请更换有数据的日期{recommend}。"
+            f"已扫描 {preview['files_scanned']}、读取 {preview['files_read']} 个文件；"
+            f"此时运行会以「无数据」结束，不会生成报告。"
         )
     rows = sum(int(table.get("target_rows") or 0) for table in preview["tables"])
     issues = len(preview["warnings"])
@@ -891,6 +1094,11 @@ def _llm_summary(record: Any) -> dict[str, Any]:
         "execution": str(execution.get("source_kind") or ""),
         "reconcile": execution.get("accepted"),
         "narrative": str(narrative.get("source_kind") or ""),
+        "adopted": {
+            "semantic": bool(semantic.get("adopted")),
+            "plan": bool(plan.get("adopted")),
+            "execution": bool(execution.get("adopted")),
+        },
         "reasons": reasons,
     }
 
@@ -901,13 +1109,17 @@ def llm_result_text(summary: dict[str, Any] | None) -> str:
     if not llm.get("enabled"):
         return "LLM 增强：未启用（当前为规则结果）"
     labels = {"semantic": "语义", "plan": "计划", "execution": "执行", "narrative": "叙事"}
+    adopted_map = llm.get("adopted") or {}
     states = []
     for key, label in labels.items():
         kind = str(llm.get(key) or "")
         if not kind:
             continue
         if kind == "llm":
-            states.append(f"{label}=LLM")
+            if key in adopted_map and not adopted_map[key]:
+                states.append(f"{label}=LLM已生成但未采信（已回退规则）")
+            else:
+                states.append(f"{label}=LLM")
         elif kind == "fallback":
             states.append(f"{label}=已降级")
         elif kind == "mixed":

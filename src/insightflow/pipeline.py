@@ -302,7 +302,10 @@ def execute(
 
         if record.rows_target == 0:
             record.status = STATUS_NO_DATA
-            record.failure_reason = f"所有可用文件中都没有 {target.isoformat()} 的数据。"
+            record.failure_reason = (
+                f"该日期（{target.isoformat()}）无数据，大模型不会触发；"
+                f"请更换有数据的日期后重新运行（可先在操作端用「预览」查看可用日期）。"
+            )
             logger.warning("run %s: %s", run_id, record.failure_reason)
             return record
 
@@ -396,9 +399,20 @@ def execute(
             if artifact.source_kind != "llm":
                 semantic_gate_reason = f"source_{artifact.source_kind}"
             else:
+                active_table_keys = {
+                    (
+                        str(tbl.source.relative_path),
+                        str(getattr(tbl, "sheet_label", "") or ""),
+                    )
+                    for tbl, extraction in prepared["extractions"]
+                    if len(extraction.target) or len(extraction.baseline)
+                }
                 try:
                     adopted = adopt_semantic_fields(
-                        artifact, prepared.get("table_schemas") or [], analysis_fields
+                        artifact,
+                        prepared.get("table_schemas") or [],
+                        analysis_fields,
+                        active_table_keys=active_table_keys,
                     )
                     analysis_fields = adopted.fields
                     semantic_adopted = True
