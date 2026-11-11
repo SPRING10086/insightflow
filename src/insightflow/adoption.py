@@ -64,10 +64,15 @@ def _env_force(env: Mapping[str, str] | None) -> bool | None:
     return str(raw).strip().lower() in TRUTHY
 
 
+def force_rules_active(llm: Any, env: Mapping[str, str] | None = None) -> bool:
+    """True when config or env requests the global rule-only kill switch."""
+    env_force = _env_force(env)
+    return bool(env_force if env_force is not None else getattr(llm, "force_rules", False))
+
+
 def resolve_adoption(llm: Any, env: Mapping[str, str] | None = None) -> AdoptionDecision:
     """Resolve configured adoption modes into this run's effective decision."""
-    env_force = _env_force(env)
-    force_rules = env_force if env_force is not None else bool(getattr(llm, "force_rules", False))
+    force_rules = force_rules_active(llm, env)
     configured = getattr(llm, "adoption", None) or {}
     modes: dict[str, str] = {}
     reasons: dict[str, str] = {}

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __app_name__, __version__, services
-from .adoption import resolve_adoption
+from .adoption import force_rules_active, resolve_adoption
 from .config import ConfigError, Settings, load_settings
 from .discovery import SourceNotFoundError
 from .logging_setup import read_run_history
@@ -164,6 +164,9 @@ def _cmd_run(settings: Settings, args: argparse.Namespace) -> int:
     plan_on = _llm_feature_on(settings, args, "plan")
     execute_on = _llm_feature_on(settings, args, "execute")
     narrative_on = _llm_feature_on(settings, args, "narrative")
+    if force_rules_active(llm):
+        # Kill switch: never construct providers, hence no outbound call.
+        semantic_on = plan_on = execute_on = narrative_on = False
     budget = llm.budget_batch_cny
     request_timeout = llm.request_timeout_seconds
     retries = llm.retry_transport

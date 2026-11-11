@@ -274,6 +274,35 @@ blockers: ["fallback_rate 0.2083 > 0.05"]
 - 净增量容差 ±2，不随次数线性增长；每次返回 True、子进程正常退出；
 - **红→绿证据**：同一测试在基线 `51fea19` 上净增 **+8**（失败），修复后净增 ≤2（通过）。
 
+## 6d 任务 2：五类故障真实注入 fallback（全链路）
+
+新增 `tests/test_6d_fault_fallback.py`（12 项），故障穿过 executor（真实 transport → JSON 契约 →
+validate_code → 子进程沙箱 → 重试/成本）与 pipeline（reconcile → 采信判定 → 回退 → 留痕）。
+
+| 故障 | 真实注入 | 结果 |
+|---|---|---|
+| 内存超限 | transport 返回 `x = [0] * 10**8`，`memory_mb=64` 真实 Job 限制 | 两次 SandboxResourceError → 管线回退；status=success、KPI 与纯规则基线逐值相等、warnings/metadata 一致 |
+| 超时 | 真实 `run_sandbox("while True", timeout=1.0, skip_validation=True)` | SandboxTimeout、进程树被 kill；随后正常沙箱仍成功；管线回退且无新 python 进程残留 |
+| 非法代码 | import os / eval / `df.__class__` / `assign` 四类 | 每次均真实 validate_code 拒绝、executor 恰好重试 2 次后抛出；管线回退、规则数字 |
+| JSON 失败 | 内层非闭合 JSON、缺 code、code 非字符串 | ContractError 重试 2 次；`json_failures` 计数；管线回退，无半截数据 |
+| 对账失败 | 沙箱真实返回 revenue+1 | accepted=false、gate_reason=reconcile_mismatch、all-or-nothing，KPI 全为规则数字 |
+
+补充：
+
+- **重试/成本**：`retry_blocked` 场景（单次成本 0.00078、预算 0.001）真实触发
+  `CostLimitExceeded("retry_blocked…")`，`stats.retry_blocked=1`；
+- **kill switch**：新增 `force_rules_active`；CLI/GUI 在 force_rules（config 或
+  `INSIGHTFLOW_FORCE_RULES`）下**不构建 provider**，测试断言四个 builder 均未被调用；
+- **其他能力**：semantic 契约失败、plan 契约失败、narrative 不安全标记各一类真实注入，均回退规则、
+  status=success、无 XSS、无 LLM 数字；
+- **资源清理**：超时后扫描 python.exe 无新增进程；Job 句柄由任务 1 的 8 次回归覆盖。
+
+修复的两个真实缺陷（均在故障路径上）：
+
+1. executor 对 `_generate` 抛出的 `ContractError` 未进入重试循环 → 已纳入 2 次重试与 `retry_blocked` 判定；
+2. `force_rules` 仅影响采信决议，CLI/GUI 仍会构建 provider 并出站 → 现在直接跳过构建。
+
+
 
 
 

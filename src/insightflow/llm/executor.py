@@ -51,7 +51,7 @@ class LLMExecutionProvider:
         self.stats = stats or LLMStats()
         self.warn_prompt_tokens = int(warn_prompt_tokens)
 
-    def _generate(self, spec: ExecutionSpec, frame, fields: list[FieldSemantics]) -> CodeArtifact:
+    def _generate(self, spec: ExecutionSpec, frame, fields: list[FieldSemantics], is_retry: bool = False) -> CodeArtifact:
         if self.spent_cny >= self.batch_budget_cny:
             raise CostLimitExceeded(f"整批预算已用尽（{self.spent_cny:.2f} 元），执行降级")
 
@@ -97,6 +97,9 @@ class LLMExecutionProvider:
         cost = client.meter.total_cny
         self.spent_cny += cost
         if self.spent_cny >= self.batch_budget_cny:
+            if is_retry:
+                self.stats.record_retry_blocked()
+                raise CostLimitExceeded("retry_blocked: 执行重试将超出整批预算")
             raise CostLimitExceeded(f"整批预算已用尽（{self.spent_cny:.2f} 元）")
         return CodeArtifact(code=code, prompt_version=EXECUTION_PROMPT_VERSION, cost_cny=cost, latency_ms=latency_ms)
 
@@ -109,7 +112,18 @@ class LLMExecutionProvider:
     ) -> ExecutionResult:
         last_error: Exception | None = None
         for attempt in range(2):
-            code_artifact = self._generate(spec, frame, list(fields or []))
+            try:
+                code_artifact = self._generate(spec, frame, list(fields or []), is_retry=attempt > 0)
+            except ContractError as exc:
+                last_error = exc
+                if attempt == 1:
+                    raise
+                if self.stats.cost_cny >= self.batch_budget_cny:
+                    self.stats.record_retry_blocked()
+                    raise CostLimitExceeded("retry_blocked: 执行重试将超出整批预算") from None
+                self.stats.record_retry()
+                self._feedback = f"上次输出不符合契约：{exc}。只输出一个 JSON 对象，包含非空 code。"
+                continue
             self.last_code = code_artifact
             try:
                 validate_code(code_artifact.code, allowed_columns)

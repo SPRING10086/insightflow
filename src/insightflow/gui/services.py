@@ -18,7 +18,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from ..adoption import resolve_adoption
+from ..adoption import force_rules_active, resolve_adoption
 from ..config import LLMSettings, Settings, load_settings
 from ..logging_setup import read_run_history
 from ..pipeline import execute
@@ -768,7 +768,7 @@ def build_llm_providers(settings: Settings) -> tuple[dict[str, Any], list[str]]:
         "narrative_provider": None,
     }
     warnings: list[str] = []
-    if not llm.enabled:
+    if not llm.enabled or force_rules_active(llm):
         return providers, warnings
 
     common = {

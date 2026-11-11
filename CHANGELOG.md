@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.21-dev — 6d 任务 2：故障注入 fallback 全链路
+
+- 新增 12 项真实注入测试：内存/超时/非法代码走真实子进程，JSON 失败走真实契约解析，
+  对账失败走真实 reconcile；全部端到端回退、规则数字、无 XSS、无残留进程。
+- executor 修复：`ContractError` 纳入 2 次重试与 `retry_blocked` 预算判定；
+  单次成本接近预算时真实触发 `retry_blocked`。
+- kill switch 修复：`force_rules`（config 或环境变量）下 CLI/GUI 直接跳过 provider 构建，零出站调用。
+- semantic/plan/narrative 各一类真实失败注入，均安全回退。
+- 全量 359 测试 OK；冒烟 17/17。
+
 ## 1.0.20-dev — 6d 任务 1 整改 B：Job 句柄泄漏
 
 - `_win_job` 显式声明 ctypes 签名，`try/finally` 在成功与失败路径统一关闭进程/job 句柄；
