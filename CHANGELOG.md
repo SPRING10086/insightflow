@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.22-dev — 6d 任务 3：回退根因修复 + 灰度达标
+
+- 单位确定性归一 + 列名单位提示；plan 只暴露实际分析字段；叙事 fact 规范化/`total.rows` 映射；
+  JSON 外层对象提取重试 + 输出上限 4000；execution prompt 键名统一为 spec.metrics。
+- 真实灰度 4 类 × 3 次：semantic 10/12、plan/execute/narrative 各 12/12；
+  overall_fallback 4.17% ≤5%，reconcile 100%，readiness.ready=true。
+- 全量 375 测试 OK。
+
 ## 1.0.21-dev — 6d 任务 2：故障注入 fallback 全链路
 
 - 新增 12 项真实注入测试：内存/超时/非法代码走真实子进程，JSON 失败走真实契约解析，
