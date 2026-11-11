@@ -239,6 +239,23 @@ blockers: ["fallback_rate 0.2083 > 0.05"]
 - 独立复算脚本 `scripts/execution_reconcile_check.py`：纯 pandas 复算 total/分组，逐项一致；
   7 个篡改场景全部被拒；证据 `docs/llm-stage6-6d-task1-check.json`（`all_checks_pass=true`）。
 
+## 6d 任务 1 整改 A：execution prompt 去循环（P1）
+
+复核发现 prompt 示例用 `for` 循环、循环变量 `_m` 以下划线开头，与沙箱白名单（拒绝 `ast.For`、拒绝
+`_` 前缀）自相矛盾，LLM 照写必被拒→重试→回退。
+
+修复：
+
+- 示例改为**逐指标显式展开**（无循环、无下划线变量），`metrics`/`metric_groups` 直接列出全部指标；
+- 指令与自检明确"禁止显式循环语句；指标多时逐指标显式展开"，不再出现鼓励循环的表述；
+- 新增 `tests/test_execution_prompt.py`：
+  1. prompt 全文不含 `for ` / `while `；
+  2. 示例代码不含 `_` 前缀名字；
+  3. 从 prompt 解析出的 `code` 通过 `validate_code`；
+  4. 该 code 在 `run_sandbox` 中产出两指标 metrics 与 metric_groups；
+  5. 反向断言 `for` 循环仍被 `validate_code` 拒绝（白名单未放宽）。
+
+
 
 
 

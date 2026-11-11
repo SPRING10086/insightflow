@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.19-dev — 6d 任务 1 整改 A：prompt 去循环
+
+- execution_v1.md 示例改为逐指标显式展开，删除 for 循环与下划线变量，指令/自检同步禁止循环。
+- 新增 prompt 一致性测试：全文无 for/while、示例无下划线名字、示例通过 `validate_code` 与沙箱实跑、
+  for 循环仍被拒（白名单未放宽）。
+- 全量 346 测试 OK。
+
 ## 1.0.18-dev — 6d 任务 1：execute 全指标对账 (a)
 
 - `ExecutionSpec` 支持多指标（`MetricRequest`），rule baseline 逐指标计算 total/分组（SUM/AVG）。
