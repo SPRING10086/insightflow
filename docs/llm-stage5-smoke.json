@@ -2,19 +2,19 @@
   "generated_at": "2026-11-11T17:31:50",
   "duration_seconds": 24.1,
   "python": "3.10.4",
-  "executable": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe",
+  "executable": "<repo>\\dist\\InsightFlow\\python\\python.exe",
   "passed": 17,
   "failed": 0,
   "checks": [
     {
       "check": "bundled_python_exists",
       "ok": true,
-      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe"
+      "detail": "<repo>\\dist\\InsightFlow\\python\\python.exe"
     },
     {
       "check": "running_on_bundled_interpreter",
       "ok": true,
-      "detail": "sys.executable=C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\python\\python.exe"
+      "detail": "sys.executable=<repo>\\dist\\InsightFlow\\python\\python.exe"
     },
     {
       "check": "python_310",
@@ -34,7 +34,7 @@
     {
       "check": "package_from_bundle",
       "ok": true,
-      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\app\\src\\insightflow\\__init__.py"
+      "detail": "<repo>\\dist\\InsightFlow\\app\\src\\insightflow\\__init__.py"
     },
     {
       "check": "no_checkout_src_on_path",
@@ -44,7 +44,7 @@
     {
       "check": "lock_file_present",
       "ok": true,
-      "detail": "C:\\Users\\Acer\\Documents\\deepseek-harness\\default-workspace\\business_analysis_flow\\insightflow\\dist\\InsightFlow\\app\\requirements.lock.txt"
+      "detail": "<repo>\\dist\\InsightFlow\\app\\requirements.lock.txt"
     },
     {
       "check": "versions_match_lock",

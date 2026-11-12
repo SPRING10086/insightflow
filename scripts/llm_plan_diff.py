@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
@@ -27,7 +28,8 @@ from insightflow.llm.plan_adapter import LLMPlanProvider  # noqa: E402
 from insightflow.pipeline import execute  # noqa: E402
 
 ACCEPTANCE = ROOT / "examples" / "acceptance"
-REAL = Path(r"C:\Users\Acer\Downloads\csv")
+# 可选外部数据目录：设置环境变量 INSIGHTFLOW_REAL_DIR 指向本地数据目录；未设置时自动跳过真实样本
+REAL = Path(os.environ.get("INSIGHTFLOW_REAL_DIR", ""))
 OUT_JSON = ROOT / "docs" / "llm-plan-diff.json"
 OUT_MD = ROOT / "docs" / "llm-plan-diff.md"
 

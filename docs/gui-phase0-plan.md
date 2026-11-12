@@ -43,7 +43,7 @@
 
 | 项 | 实测结果 | 对方案的影响 |
 |---|---|---|
-| Python | 3.10.4（`C:\Users\Acer\AppData\Local\Programs\Python\Python310\python.exe`） | 与 `requires-python >=3.10` 一致；`X | None` 语法可用 |
+| Python | 3.10.4（本机安装的 Python 3.10 解释器） | 与 `requires-python >=3.10` 一致；`X | None` 语法可用 |
 | tkinter | 8.6，可 import | 选型成立，无需安装 |
 | pandas / numpy | **2.3.3 / 2.2.6** | 与 `requirements.lock.txt` 完全一致（系统解释器已是锁定版本） |
 | `.venv` | **不存在** | 启动器必须"优先 venv、缺失回退"，不能硬编码 venv 路径 |

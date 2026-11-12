@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import shutil
 import sys
 import tempfile
@@ -19,7 +20,8 @@ from insightflow.llm.narrative_gen import LLMNarrativeProvider  # noqa: E402
 from insightflow.pipeline import execute  # noqa: E402
 
 ACCEPTANCE = ROOT / "examples" / "acceptance"
-REAL = Path(r"C:\Users\Acer\Downloads\csv\2018\上海.csv")
+# 可选外部真实样本：设置环境变量 INSIGHTFLOW_REAL_SAMPLE 指向本地 CSV；未设置时自动跳过，仅用 examples 合成样本
+REAL = Path(os.environ.get("INSIGHTFLOW_REAL_SAMPLE", ""))
 OUT = ROOT / "docs" / "llm-narrative-evidence.json"
 
 
